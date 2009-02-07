@@ -1,3 +1,5 @@
+#define _WIN32_IE 0x0500
+#define _WIN32_WINNT 0x0501
 #include "globals.h"
 #include "resource.h"
 #include <windows.h>
@@ -14,7 +16,10 @@ using namespace std;
 
 HINSTANCE g_hInstance = 0;
 HWND g_hmainWindow = 0;
+HWND g_topRebar = 0;
+HWND g_leftRebar = 0;
 HWND g_htoolbar = 0;
+HWND g_htoolbarDraw = 0;
 HWND g_hclientWindow = 0;
 HPEN g_gridHPen = 0;
 HCURSOR g_cursorHandle = 0;
@@ -575,30 +580,144 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 	switch (msg)
 	{
 	case WM_CREATE:
+		g_topRebar = CreateWindowExW(0, REBARCLASSNAMEW, 0,
+				WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN |
+				RBS_VARHEIGHT | CCS_NODIVIDER | RBS_BANDBORDERS | CCS_NORESIZE, 0, 0, 0, 0,
+				hwnd, 0, g_hInstance, 0);
+		if (g_topRebar == 0)
+			return -1;
+		g_leftRebar = CreateWindowExW(0, REBARCLASSNAMEW, 0,
+				WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN |
+				RBS_VARHEIGHT | CCS_NODIVIDER | RBS_BANDBORDERS | CCS_VERT | CCS_NORESIZE, 0, 0, 0, 0,
+				hwnd, 0, g_hInstance, 0);
+		if (g_leftRebar == 0)
+			return -1;
+		do
 		{
-		g_htoolbar = CreateWindowExW(0, TOOLBARCLASSNAMEW, L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, 0, g_hInstance, 0);
-		if (!g_htoolbar)
-			return -1;
-		//SendMessageW(g_htoolbar, TB_SETIMAGELIST, 0, g_himageList);
-		TBADDBITMAP tbAddBitmap = { g_hInstance, reinterpret_cast<INT_PTR>(MAKEINTRESOURCEW(IDB_TOOLBAR)) };
-		if (SendMessageW(g_htoolbar, TB_ADDBITMAP, 2, reinterpret_cast<LPARAM>(&tbAddBitmap)) == -1)
-			return -1;
-		SendMessageW(g_htoolbar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
-		const TBBUTTON buttons[] = {
-			{0, ID_VIEW_PAN, TBSTATE_ENABLED, 0, 0, 0 },
-			{1, ID_VIEW_ZOOM, TBSTATE_ENABLED, 0, 0, 0 }};
-		if (!SendMessageW(g_htoolbar, TB_ADDBUTTONS, sizeof(buttons) / sizeof(buttons[0]), reinterpret_cast<LPARAM>(buttons)))
-			return -1;
-		SendMessageW(g_htoolbar, TB_AUTOSIZE, 0, 0);
+			g_htoolbar = CreateWindowExW(0, TOOLBARCLASSNAMEW, L"", WS_CHILD |
+					WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | TBSTYLE_FLAT |
+					CCS_NORESIZE | CCS_NODIVIDER, 0, 0, 0, 0, hwnd, 0, g_hInstance, 0);
+			if (!g_htoolbar)
+				return -1;
+			//SendMessageW(g_htoolbar, TB_SETIMAGELIST, 0, g_himageList);
+			TBADDBITMAP tbAddBitmap = { g_hInstance, reinterpret_cast<INT_PTR>(MAKEINTRESOURCEW(IDB_TOOLBAR)) };
+			if (SendMessageW(g_htoolbar, TB_ADDBITMAP, 2, reinterpret_cast<LPARAM>(&tbAddBitmap)) == -1)
+				return -1;
+			SendMessageW(g_htoolbar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+			const TBBUTTON buttons[] = {
+				{0, ID_VIEW_PAN, TBSTATE_ENABLED, 0, 0, 0 },
+				{1, ID_VIEW_ZOOM, TBSTATE_ENABLED, 0, 0, 0 }};
+			if (!SendMessageW(g_htoolbar, TB_ADDBUTTONS, sizeof(buttons) / sizeof(buttons[0]), reinterpret_cast<LPARAM>(buttons)))
+				return -1;
+			long buttonSize = SendMessageW(g_htoolbar, TB_GETBUTTONSIZE, 0, 0);
+			int buttonHeight = HIWORD(buttonSize);
+			int buttonWidth = LOWORD(buttonSize);
+			MoveWindow(g_htoolbar, 0, 0, buttonWidth * sizeof(buttons) / sizeof(buttons[0]), buttonHeight, false);
+		}
+		while (false);
+
+		do
+		{
+			g_htoolbarDraw = CreateWindowExW(0, TOOLBARCLASSNAMEW, L"", WS_CHILD |
+					WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | TBSTYLE_FLAT |
+					CCS_NORESIZE | CCS_NODIVIDER | TBSTYLE_WRAPABLE, 0, 0, 0, 0, hwnd, 0, g_hInstance, 0);
+			if (!g_htoolbarDraw)
+				return -1;
+			TBADDBITMAP tbAddBitmap = { g_hInstance, reinterpret_cast<INT_PTR>(MAKEINTRESOURCEW(IDB_TBDRAW)) };
+			if (SendMessageW(g_htoolbarDraw, TB_ADDBITMAP, 2, reinterpret_cast<LPARAM>(&tbAddBitmap)) == -1)
+				return -1;
+			SendMessageW(g_htoolbarDraw, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+			const TBBUTTON buttons[] = {
+				{0, ID_DRAW_LINES, TBSTATE_ENABLED, 0, 0, 0 },
+				{1, ID_DRAW_ARCS, TBSTATE_ENABLED, 0, 0, 0 }};
+			if (!SendMessageW(g_htoolbarDraw, TB_ADDBUTTONS, sizeof(buttons) / sizeof(buttons[0]), reinterpret_cast<LPARAM>(buttons)))
+				return -1;
+			long buttonSize = SendMessageW(g_htoolbarDraw, TB_GETBUTTONSIZE, 0, 0);
+			int buttonHeight = HIWORD(buttonSize);
+			int buttonWidth = LOWORD(buttonSize);
+			MoveWindow(g_htoolbarDraw, 0, 0, buttonWidth * sizeof(buttons) / sizeof(buttons[0]), buttonHeight, false);
+			//SendMessageW(g_htoolbarDraw, TB_AUTOSIZE, 0, 0);
+		}
+		while (false);
+
+		do
+		{
+			do
+			{
+				REBARBANDINFOW bi = {0};
+				bi.cbSize = sizeof(bi);
+				bi.fMask = RBBIM_STYLE | RBBIM_CHILD | RBBIM_CHILDSIZE;
+				bi.fStyle = RBBS_CHILDEDGE | RBBS_GRIPPERALWAYS;
+				bi.hwndChild = g_htoolbar;
+				RECT rect;
+				GetWindowRect(g_htoolbar, &rect);
+				bi.cyMinChild = rect.bottom - rect.top;
+				bi.cxMinChild = rect.right - rect.left;
+				if (!SendMessageW(g_topRebar, RB_INSERTBAND, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(&bi)))
+					return -1;
+			}
+			while (false);
+			/*do
+			{
+				REBARBANDINFOW bi = {0};
+				bi.cbSize = sizeof(bi);
+				bi.fMask = RBBIM_STYLE | RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_SIZE;
+				bi.fStyle = RBBS_CHILDEDGE | RBBS_GRIPPERALWAYS;
+				bi.hwndChild = g_htoolbarDraw;
+				RECT rect;
+				GetWindowRect(g_htoolbarDraw, &rect);
+				bi.cyMinChild = rect.bottom - rect.top;
+				bi.cxMinChild = rect.right - rect.left;
+				bi.cx = 60;
+				if (!SendMessageW(g_topRebar, RB_INSERTBAND, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(&bi)))
+					return -1;
+			}
+			while (false);*/
+			do
+			{
+				REBARBANDINFOW bi = {0};
+				bi.cbSize = sizeof(bi);
+				bi.fMask = RBBIM_STYLE | RBBIM_CHILD | RBBIM_CHILDSIZE;
+				bi.fStyle = RBBS_CHILDEDGE | RBBS_GRIPPERALWAYS;
+				bi.hwndChild = g_htoolbarDraw;
+				RECT rect;
+				GetWindowRect(g_htoolbarDraw, &rect);
+				bi.cyMinChild = rect.bottom - rect.top;
+				bi.cxMinChild = rect.right - rect.left;
+				if (!SendMessageW(g_leftRebar, RB_INSERTBAND, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(&bi)))
+					return -1;
+			}
+			while (false);
+		}
+		while (false);
 
 		g_hclientWindow = CreateWindowExW(0, MAINCLIENTCLASS, L"", WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL, 0, 0, 0, 0, hwnd, reinterpret_cast<HMENU>(1), g_hInstance, 0);
 		if (g_hclientWindow == 0)
 			return -1;
-		}
 		return 0;
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		return 0;
+	case WM_NOTIFY:
+		NMHDR * nmhdr;
+		nmhdr = reinterpret_cast<NMHDR*>(lparam);
+		if (nmhdr->hwndFrom == g_topRebar)
+		{
+			switch (nmhdr->code)
+			{
+			case RBN_HEIGHTCHANGE:
+				RECT toolbarRect;
+				GetWindowRect(g_topRebar, &toolbarRect);
+				RECT clientRect;
+				GetClientRect(hwnd, &clientRect);
+				int width = clientRect.right;
+				int height = clientRect.bottom - (toolbarRect.bottom - toolbarRect.top);
+				MoveWindow(g_hclientWindow, 0, toolbarRect.bottom - toolbarRect.top,
+					width, height, true);
+				break;
+			}
+		}
+		return DefWindowProcW(hwnd, msg, wparam, lparam);
 	case WM_COMMAND:
 		switch (LOWORD(wparam))
 		{
@@ -614,15 +733,18 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		}
 		break;
 	case WM_SIZE:
+		do
 		{
-		SendMessageW(g_htoolbar, TB_AUTOSIZE, 0, 0);
-		RECT toolbarRect;
-		GetWindowRect(g_htoolbar, &toolbarRect);
-		int width = LOWORD(lparam);
-		int height = HIWORD(lparam) - (toolbarRect.bottom - toolbarRect.top);
-		MoveWindow(g_hclientWindow, 0, toolbarRect.bottom - toolbarRect.top,
-			width, height, true);
+			long topRebarHeight = static_cast<unsigned int>(SendMessageW(g_topRebar, RB_GETBARHEIGHT, 0, 0));
+			long leftRebarWidth = static_cast<unsigned int>(SendMessageW(g_leftRebar, RB_GETBARHEIGHT, 0, 0));
+			int width = LOWORD(lparam);
+			int height = HIWORD(lparam);
+			MoveWindow(g_topRebar, 0, 0, width, topRebarHeight, true);
+			MoveWindow(g_leftRebar, 0, topRebarHeight, leftRebarWidth, height - topRebarHeight, true);
+			MoveWindow(g_hclientWindow, leftRebarWidth, topRebarHeight,
+				width - leftRebarWidth, height - topRebarHeight, true);
 		}
+		while (false);
 		return 0;
 	case WM_SETFOCUS:
 		SetFocus(g_hclientWindow);

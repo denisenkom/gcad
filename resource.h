@@ -5,6 +5,7 @@
 #define IDR_MENU1                       101
 #define IDR_MAINMENU                    101
 #define IDB_TOOLBAR                     109
+#define IDB_TBDRAW                      110
 #define IDC_PAN                         113
 #define IDC_ZOOM                        116
 #define ID_FILE_CLOSE					40002
