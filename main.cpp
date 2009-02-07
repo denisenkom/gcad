@@ -438,12 +438,14 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 					g_cursorWrld = ScreenToWorld(g_cursorScn);
 					bool snapped;
 					snapped = false;
+					// checking for object snap
 					if (g_objectSnapEnable && g_curTool != &g_selectTool)
 					{
 						bool first = true;
 						double minDist;
 						Point<double> best;
 						PointType bestType;
+						// finding closest point
 						for (list<CadObject *>::iterator i = g_doc.Objects.begin();
 							i != g_doc.Objects.end(); i++)
 						{
@@ -463,48 +465,52 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 								}
 							}
 						}
-						Point<int> bestScn = WorldToScreen(best);
-						bool show = false;
-						if (minDist * g_magification < 50)
+						// if found
+						if (!first)
 						{
-							show = true;
-						}
-						if (minDist * g_magification < 5)
-						{
-							g_cursorWrld = best;
-							g_cursorScn = bestScn;
-							snapped = true;
-						}
-						if (show)
-						{
-							bool needDraw = false;
-							if (g_objSnapDrawn)
+							Point<int> bestScn = WorldToScreen(best);
+							bool show = false;
+							if (minDist * g_magification < 50)
 							{
-								if (g_objSnapPos != bestScn || g_objSnapType != bestType)
+								show = true;
+							}
+							if (minDist * g_magification < 5)
+							{
+								g_cursorWrld = best;
+								g_cursorScn = bestScn;
+								snapped = true;
+							}
+							if (show)
+							{
+								bool needDraw = false;
+								if (g_objSnapDrawn)
 								{
-									// erasing
-									DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
+									if (g_objSnapPos != bestScn || g_objSnapType != bestType)
+									{
+										// erasing
+										DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
+										needDraw = true;
+									}
+								}
+								else
+								{
 									needDraw = true;
+								}
+								if (needDraw)
+								{
+									DrawObjectSnap(hdc, bestScn, bestType);
+									g_objSnapDrawn = true;
+									g_objSnapPos = bestScn;
+									g_objSnapType = bestType;
 								}
 							}
 							else
 							{
-								needDraw = true;
-							}
-							if (needDraw)
-							{
-								DrawObjectSnap(hdc, bestScn, bestType);
-								g_objSnapDrawn = true;
-								g_objSnapPos = bestScn;
-								g_objSnapType = bestType;
-							}
-						}
-						else
-						{
-							if (g_objSnapDrawn)
-							{
-								DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
-								g_objSnapDrawn = false;
+								if (g_objSnapDrawn)
+								{
+									DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
+									g_objSnapDrawn = false;
+								}
 							}
 						}
 					}
