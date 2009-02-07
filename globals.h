@@ -325,8 +325,6 @@ struct ToolInfo
 {
 public:
 	int Id;
-	bool HasToolbarButton;
-	bool HasMenuItem;
 	::Tool & Tool;
 };
 
@@ -339,11 +337,11 @@ extern DrawArcsTool g_drawArcsTool;
 extern Tool * g_curTool;
 
 const ToolInfo TOOLS[] = {
-	{ID_VIEW_SELECT, false, false, g_selectTool},
-	{ID_VIEW_PAN, true, true, g_panTool},
-	{ID_VIEW_ZOOM, true, true, g_zoomTool},
-	{ID_DRAW_LINES, false, true, g_drawLinesTool},
-	{ID_DRAW_ARCS, false, true, g_drawArcsTool},
+	{ID_VIEW_SELECT, g_selectTool},
+	{ID_VIEW_PAN, g_panTool},
+	{ID_VIEW_ZOOM, g_zoomTool},
+	{ID_DRAW_LINES, g_drawLinesTool},
+	{ID_DRAW_ARCS, g_drawArcsTool},
 };
 const int NUM_TOOLS = sizeof(TOOLS) / sizeof(TOOLS[0]);
 
@@ -392,8 +390,6 @@ extern HCURSOR g_cursorHandle;
 
 extern HPEN g_lineHPen;
 extern HPEN g_selectedLineHPen;
-
-extern int g_checkedMenu;
 
 extern Document g_doc;
 

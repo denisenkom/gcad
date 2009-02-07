@@ -43,8 +43,6 @@ bool g_mouseInsideClient = false;
 Point<int> g_cursorScn;
 Point<double> g_cursorWrld;
 
-int g_checkedMenu = 0;
-
 Document g_doc;
 
 SelectorTool g_selectTool;
@@ -412,47 +410,7 @@ void ExtendVScrollLimits(SCROLLINFO & si)
 
 void SelectTool(int toolId)
 {
-	if (g_checkedMenu == toolId)
-		return;
-	HMENU hmenu = GetMenu(g_hmainWindow);
-
-	if (g_checkedMenu != 0)
-	{
-		const ToolInfo & toolInfo = ToolById(g_checkedMenu);
-		if (toolInfo.HasMenuItem)
-		{
-			MENUITEMINFOW iteminfo = {0};
-			iteminfo.cbSize = sizeof(iteminfo);
-			iteminfo.fMask = MIIM_STATE | MIIM_FTYPE;
-			iteminfo.fType = MFT_STRING | MFT_RADIOCHECK;
-			iteminfo.fState = MFS_ENABLED;
-			if (!SetMenuItemInfoW(hmenu, g_checkedMenu, false, &iteminfo))
-				assert(0);
-		}
-
-		if (toolInfo.HasToolbarButton)
-		{
-			if (!SendMessageW(g_htoolbar, TB_CHECKBUTTON, g_checkedMenu, 0))
-				assert(0);
-		}
-	}
-
 	const ToolInfo & toolInfo = ToolById(toolId);
-	if (toolInfo.HasMenuItem)
-	{
-		MENUITEMINFOW iteminfo = {0};
-		iteminfo.cbSize = sizeof(iteminfo);
-		iteminfo.fMask = MIIM_STATE | MIIM_FTYPE;
-		iteminfo.fType = MFT_STRING | MFT_RADIOCHECK;
-		iteminfo.fState = MFS_CHECKED | MFS_ENABLED;
-		if (!SetMenuItemInfoW(hmenu, toolId, false, &iteminfo))
-			assert(0);
-	}
-	if (toolInfo.HasToolbarButton)
-	{
-		if (!SendMessageW(g_htoolbar, TB_CHECKBUTTON, toolId, 1))
-			assert(0);
-	}
 	g_curTool = &toolInfo.Tool;
 	switch (toolId)
 	{
@@ -484,7 +442,6 @@ void SelectTool(int toolId)
 		assert(0);
 		break;
 	}
-	g_checkedMenu = toolId;
 }
 
 
