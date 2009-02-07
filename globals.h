@@ -184,7 +184,6 @@ public:
 	virtual void Recalc() const;
 	virtual class CadObject * CreateCad() const;
 	virtual void AssignToCad(CadObject * to) const;
-	void AssignToCad(CadArc * to) const;
 private:
 	// source points of arc
 	mutable Point<double> m_first;
@@ -196,6 +195,7 @@ private:
 	mutable Point<double> m_center;
 	mutable double m_radius;
 	mutable bool m_ccw;
+	mutable bool m_straight;
 };
 
 
@@ -397,15 +397,11 @@ extern int g_checkedMenu;
 
 extern Document g_doc;
 
+extern bool g_objSnapDrawn;
+extern PointType g_objSnapType;
+extern Point<int> g_objSnapPos;
 
-inline Point<int> WorldToScreen(float x, float y)
-{
-	Point<int> result;
-	result.X = static_cast<int>((x - g_extentMin.X) * g_magification + 0.5f) - g_hscrollPos;
-	result.Y = static_cast<int>((y - g_extentMax.Y) * -g_magification + 0.5f) - g_vscrollPos;
-	return result;
-}
-
+Point<int> WorldToScreen(float x, float y);
 
 inline Point<int> WorldToScreen(double x, double y)
 {
@@ -468,5 +464,7 @@ void DrawFantoms(HDC hdc);
 void RecalcFantoms();
 void DeleteFantoms(bool update);
 void DeleteFantoms(HDC hdc);
+
+void DrawObjectSnap(HDC hdc, Point<int> pos, PointType type);
 
 #endif /* GLOBALS_H_ */

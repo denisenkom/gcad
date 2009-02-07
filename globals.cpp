@@ -188,9 +188,9 @@ void CadArc::Draw(HDC hdc, bool selected) const
 		start = end;
 		end = temp;
 	}
-	MoveToEx(hdc, start.X, start.Y, 0);
-	ArcTo(hdc, center.X - r, center.Y - r, center.X + r + 1, center.Y + r + 1, start.X, start.Y, end.X, end.Y);
-	LineTo(hdc, end.X + 1, end.Y);
+	//MoveToEx(hdc, start.X, start.Y, 0);
+	Arc(hdc, center.X - r, center.Y - r, center.X + r + 1, center.Y + r + 1, start.X, start.Y, end.X, end.Y);
+	//LineTo(hdc, end.X + 1, end.Y);
 }
 
 
@@ -259,57 +259,94 @@ void FantomArc::Recalc() const
 			{sx2sy2, p2.X, p2.Y},
 			{sx3sy3, p3.X, p3.Y}};
 	double dm11 = det3(m11);
-	double dm12 = det3(m12);
-	double dm13 = det3(m13);
-	double dm14 = det3(m14);
-	double cx = +.5f * dm12/dm11;
-	double cy = -.5f * dm13/dm11;
-	m_center = Point<double>(cx, cy);
-	m_radius = sqrt(cx*cx + cy*cy + dm14/dm11);
-	m_ccw = dm11 > 0;
+	if (dm11 == 0)
+	{
+		m_straight = true;
+	}
+	else
+	{
+		double dm12 = det3(m12);
+		double dm13 = det3(m13);
+		double dm14 = det3(m14);
+		double cx = +.5f * dm12/dm11;
+		double cy = -.5f * dm13/dm11;
+		m_center = Point<double>(cx, cy);
+		m_radius = sqrt(cx*cx + cy*cy + dm14/dm11);
+		m_ccw = dm11 > 0;
+		m_straight = false;
+	}
 }
 
 
 void FantomArc::Draw(HDC hdc) const
 {
 	SelectObject(hdc, g_lineHPen);
-	Point<int> center = WorldToScreen(m_center);
-	Point<int> from = WorldToScreen(m_first);
-	Point<int> to = WorldToScreen(m_third);
-	int radius = static_cast<int>(m_radius * g_magification);
-	if (!m_ccw)
+	if (m_straight)
 	{
-		Point<int> temp = from;
-		from = to;
-		to = temp;
+		Point<int> startScn = WorldToScreen(m_first);
+		MoveToEx(hdc, startScn.X, startScn.Y, 0);
+		LineTo(hdc, g_cursorScn.X, g_cursorScn.Y);
+		LineTo(hdc, g_cursorScn.X + 1, g_cursorScn.Y);
 	}
-	Arc(hdc, center.X - radius, center.Y - radius, center.X + radius + 1, center.Y + radius + 1, from.X, from.Y, to.X, to.Y);
+	else
+	{
+		Point<int> center = WorldToScreen(m_center);
+		Point<int> from = WorldToScreen(m_first);
+		Point<int> to = WorldToScreen(m_third);
+		int radius = static_cast<int>(m_radius * g_magification);
+		if (!m_ccw)
+		{
+			Point<int> temp = from;
+			from = to;
+			to = temp;
+		}
+		Arc(hdc, center.X - radius, center.Y - radius, center.X + radius + 1, center.Y + radius + 1, from.X, from.Y, to.X, to.Y);
+	}
 }
 
 
 CadObject * FantomArc::CreateCad() const
 {
-	CadArc * result = new CadArc;
-	AssignToCad(result);
-	return result;
+	Recalc();
+	if (m_straight)
+	{
+		CadLine * result = new CadLine;
+		result->Point1 = m_first;
+		result->Point2 = m_third;
+		return result;
+	}
+	else
+	{
+		CadArc * result = new CadArc;
+		result->Start = m_first;
+		result->Center = m_center;
+		result->End = m_third;
+		result->Ccw = m_ccw;
+		result->Radius = m_radius;
+		return result;
+	}
 }
 
 
 void FantomArc::AssignToCad(CadObject * to) const
 {
-	CadArc * arc = dynamic_cast<CadArc*>(to);
-	AssignToCad(arc);
-}
-
-
-void FantomArc::AssignToCad(CadArc * to) const
-{
-	Recalc();
-	to->Center = m_center;
-	to->Start = m_first;
-	to->End = m_third;
-	to->Radius = m_radius;
-	to->Ccw = m_ccw;
+	if (m_straight)
+	{
+		CadLine * line = dynamic_cast<CadLine*>(to);
+		assert(line);
+		line->Point1 = m_first;
+		line->Point2 = m_third;
+	}
+	else
+	{
+		CadArc * arc = dynamic_cast<CadArc*>(to);
+		assert(arc);
+		arc->Start = m_first;
+		arc->Center = m_center;
+		arc->End = m_third;
+		arc->Ccw = m_ccw;
+		arc->Radius = m_radius;
+	}
 }
 
 
@@ -810,12 +847,17 @@ void DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPA
 				if (g_cursorDrawn)
 					DrawCursor(hdc);
 				DeleteFantoms(hdc);
+				if (g_objSnapDrawn)
+					DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
 				CadObject * line = m_fantomLine->CreateCad();
 				g_doc.Objects.push_back(line);
 				SetROP2(hdc, R2_COPYPEN);
 				line->Draw(hdc, false);
+				SetROP2(hdc, R2_XORPEN);
 				if (g_cursorDrawn)
 					DrawCursor(hdc);
+				if (g_objSnapDrawn)
+					DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
 			}
 			catch (WindowsError &)
 			{
@@ -827,6 +869,12 @@ void DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPA
 		}
 		m_fantomLine = new FantomLine(g_cursorWrld);
 		g_fantoms.push_back(m_fantomLine);
+		do
+		{
+			ClientDC hdc(hwnd);
+			m_fantomLine->Draw(hdc);
+		}
+		while (false);
 		break;
 	case WM_KEYDOWN:
 		switch (wparam)
@@ -871,13 +919,30 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 		{
 		case StateSelectingFirstPoint:
 			m_firstPoint = g_cursorWrld;
-			g_fantoms.push_back(new FantomLine(g_cursorWrld));
+			FantomLine * fantomLine;
+			fantomLine = new FantomLine(g_cursorWrld);
+			g_fantoms.push_back(fantomLine);
+			do
+			{
+				ClientDC hdc(hwnd);
+				SetROP2(hdc, R2_XORPEN);
+				fantomLine->Draw(hdc);
+			}
+			while (false);
 			m_state = StateSelectingSecondPoint;
 			break;
 		case StateSelectingSecondPoint:
 			DeleteFantoms(true);
 			m_fantomArc = new FantomArc(m_firstPoint, g_cursorWrld);
 			g_fantoms.push_back(m_fantomArc);
+			do
+			{
+				ClientDC hdc(hwnd);
+				m_fantomArc->Recalc();
+				SetROP2(hdc, R2_XORPEN);
+				m_fantomArc->Draw(hdc);
+			}
+			while (false);
 			m_state = StateSelectingThirdPoint;
 			break;
 		case StateSelectingThirdPoint:
@@ -886,13 +951,18 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			ClientDC hdc(hwnd);
 			if (g_cursorDrawn)
 				DrawCursor(hdc);
+			if (g_objSnapDrawn)
+				DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
 			CadObject * arc = m_fantomArc->CreateCad();
 			DeleteFantoms(hdc);
 			g_doc.Objects.push_back(arc);
 			SetROP2(hdc, R2_COPYPEN);
 			arc->Draw(hdc, false);
+			SetROP2(hdc, R2_XORPEN);
 			if (g_cursorDrawn)
 				DrawCursor(hdc);
+			if (g_objSnapDrawn)
+				DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
 		}
 			break;
 		}
@@ -927,6 +997,19 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 		}
 		break;
 	}
+}
+
+
+Point<int> WorldToScreen(float x, float y)
+{
+	Point<int> result;
+	float scnx = (x - g_extentMin.X) * g_magification + 0.5f;
+	float scny = (y - g_extentMax.Y) * -g_magification + 0.5f;
+	assert(INT_MIN <= scnx - g_hscrollPos && scnx - g_hscrollPos <= INT_MAX);
+	assert(INT_MIN <= scny - g_vscrollPos && scny - g_vscrollPos <= INT_MAX);
+	result.X = static_cast<int>(scnx) - g_hscrollPos;
+	result.Y = static_cast<int>(scny) - g_vscrollPos;
+	return result;
 }
 
 
