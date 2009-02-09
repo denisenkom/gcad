@@ -6,6 +6,7 @@
 #define IDR_MAINMENU                    101
 #define IDB_TOOLBAR                     109
 #define IDB_TBDRAW                      110
+#define IDB_TBMODIFY                    111
 #define IDC_PAN                         113
 #define IDC_ZOOM                        116
 #define ID_FILE_CLOSE					40002
@@ -18,6 +19,7 @@
 #define ID_DRAW_LINES                   40007
 #define ID_40008                        40008
 #define ID_DRAW_ARCS                    40009
+#define ID_MODIFY_MOVE                  40010
 
 // Next default values for new objects
 //

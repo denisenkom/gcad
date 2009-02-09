@@ -78,6 +78,7 @@ END
 
 IDB_TOOLBAR             BITMAP                  "toolbar.bmp"
 IDB_TBDRAW              BITMAP                  "tbdraw.bmp"
+IDB_TBMODIFY            BITMAP                  "tbmod.bmp"
 
 /////////////////////////////////////////////////////////////////////////////
 //

@@ -13,6 +13,7 @@
 #include <windows.h> // for HDC
 #include <list>
 #include <vector>
+#include <loki/functor.h>
 
 
 #ifndef WM_MOUSEHWHEEL
@@ -103,11 +104,13 @@ public:
 	virtual std::vector<Point<double> > GetManipulators() const = 0;
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const = 0;
 	virtual class Fantom * CreateFantom(int param) = 0;
+	virtual void Move(Point<double> displacement) = 0;
+	virtual CadObject * Clone() = 0;
+	virtual void Assign(CadObject * rhs) = 0;
 protected:
 	CadObject() {}
-private:
-	CadObject(const CadObject & orig);
-	CadObject & operator=(const CadObject & orig);
+	CadObject(const CadObject & orig) {}
+	CadObject & operator=(const CadObject & orig) { return *this; }
 };
 
 
@@ -138,6 +141,10 @@ public:
 	virtual std::vector<Point<double> > GetManipulators() const;
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual class Fantom * CreateFantom(int param);
+	virtual void Move(Point<double> displacement);
+	virtual CadObject * Clone();
+	virtual void Assign(CadObject * rhs);
+	void Assign(CadLine * rhs);
 };
 
 
@@ -171,6 +178,10 @@ public:
 	virtual std::vector<Point<double> > GetManipulators() const;
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual class Fantom * CreateFantom(int param);
+	virtual void Move(Point<double> displacement);
+	virtual CadObject * Clone();
+	virtual void Assign(CadObject * rhs);
+	void Assign(CadArc * rhs);
 };
 
 
@@ -223,6 +234,9 @@ class Tool
 {
 public:
 	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam) = 0;
+	virtual void Start(const std::list<CadObject *> & selected) = 0;
+	virtual void Cancel() = 0;
+	virtual void Exiting() = 0;
 protected:
 	Tool() {}
 	virtual ~Tool() {}
@@ -237,27 +251,20 @@ class SelectorTool : public Tool
 public:
 	SelectorTool() : m_state(Selecting) {}
 	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual void Start(const std::list<CadObject *> & selected);
 	void DrawManipulators(HDC hdc);
-	bool IsSelected(const CadObject * obj)
-	{
-		for (std::list<CadObject *>::const_iterator i = m_selected.begin();
-			i != m_selected.end(); i++)
-		{
-			if (*i == obj)
-				return true;
-		}
-		return false;
-	}
+	virtual void Cancel();
+	virtual void Exiting();
 private:
 	enum State {Selecting, MovingManip};
 	static const int MANIP_SIZE = 10; // pixels
 	State m_state;
 	std::list<Manipulator> m_manipulators;
 	std::list<Manipulator>::iterator m_selManip;
-	std::list<CadObject *> m_selected;
 	std::list<CadObject *> m_manipulated;
 	void RemoveManipulators(CadObject * obj);
 	void AddManipulators(CadObject * obj);
+	void SelectHandler(CadObject * obj, bool select);
 };
 
 
@@ -266,6 +273,9 @@ class ZoomTool : public Tool
 public:
 	ZoomTool() : m_zooming(false) {}
 	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Cancel() {}
+	virtual void Exiting() {}
 private:
 	bool m_zooming;
 	int m_startX;
@@ -283,6 +293,9 @@ class PanTool : public Tool
 public:
 	PanTool() : m_panning(false) {}
 	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Cancel() {}
+	virtual void Exiting() {}
 private:
 	bool m_panning;
 	int m_prevX;
@@ -295,6 +308,9 @@ class DrawLinesTool : public Tool
 public:
 	DrawLinesTool() : m_selectingSecondPoint(false) {}
 	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Cancel();
+	virtual void Exiting();
 private:
 	bool m_selectingSecondPoint;
 	FantomLine * m_fantomLine; // not owned
@@ -305,7 +321,9 @@ class DrawArcsTool : public Tool
 {
 public:
 	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
-	void Start() { m_state = StateSelectingFirstPoint; }
+	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Cancel();
+	virtual void Exiting();
 private:
 	enum State
 	{
@@ -318,8 +336,29 @@ private:
 	FantomArc * m_fantomArc; // not owned
 };
 
+
+class MoveTool : public Tool
+{
+public:
+	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Cancel();
+	virtual void Exiting();
+private:
+	enum State
+	{
+		StateSelecting,
+		StateChoosingBasePoint,
+		StateChoosingDestPoint,
+	};
+	State m_state;
+	Point<double> m_basePoint;
+	std::vector<CadObject *> m_objects;
+	void DeleteCopies();
+};
+
 enum CursorType { CursorTypeManual, CursorTypeSystem };
-enum CustomCursorType { CustomCursorTypeSelect, CustomCursorTypeCross };
+enum CustomCursorType { CustomCursorTypeSelect, CustomCursorTypeCross, CustomCursorTypeBox };
 
 struct ToolInfo
 {
@@ -334,6 +373,7 @@ extern PanTool g_panTool;
 extern ZoomTool g_zoomTool;
 extern DrawLinesTool g_drawLinesTool;
 extern DrawArcsTool g_drawArcsTool;
+extern MoveTool g_moveTool;
 extern Tool * g_curTool;
 
 const ToolInfo TOOLS[] = {
@@ -342,6 +382,7 @@ const ToolInfo TOOLS[] = {
 	{ID_VIEW_ZOOM, g_zoomTool},
 	{ID_DRAW_LINES, g_drawLinesTool},
 	{ID_DRAW_ARCS, g_drawArcsTool},
+	{ID_MODIFY_MOVE, g_moveTool},
 };
 const int NUM_TOOLS = sizeof(TOOLS) / sizeof(TOOLS[0]);
 
@@ -396,6 +437,9 @@ extern Document g_doc;
 extern bool g_objSnapDrawn;
 extern PointType g_objSnapType;
 extern Point<int> g_objSnapPos;
+extern bool g_canSnap;
+
+extern Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> g_selectHandler;
 
 Point<int> WorldToScreen(float x, float y);
 
@@ -462,5 +506,7 @@ void DeleteFantoms(bool update);
 void DeleteFantoms(HDC hdc);
 
 void DrawObjectSnap(HDC hdc, Point<int> pos, PointType type);
+
+bool IsSelected(const CadObject * obj);
 
 #endif /* GLOBALS_H_ */

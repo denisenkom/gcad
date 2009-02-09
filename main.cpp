@@ -18,8 +18,11 @@ HINSTANCE g_hInstance = 0;
 HWND g_hmainWindow = 0;
 HWND g_topRebar = 0;
 HWND g_leftRebar = 0;
+HWND g_rightRebar = 0;
 HWND g_htoolbar = 0;
 HWND g_htoolbarDraw = 0;
+HWND g_htoolbarMod = 0;
+HWND g_statusBar = 0;
 HWND g_hclientWindow = 0;
 HPEN g_gridHPen = 0;
 HCURSOR g_cursorHandle = 0;
@@ -106,6 +109,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 			assert(0);
 		if (!DeleteObject(g_selectedManipHBrush))
 			assert(0);
+		g_selectHandler = Loki::Functor<void, LOKI_TYPELIST_2(CadObject *, bool)>();
 		return 0;
 	case WM_PAINT:
 		{
@@ -147,7 +151,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 		for (list<CadObject *>::const_iterator i = g_doc.Objects.begin();
 			i != g_doc.Objects.end(); i++)
 		{
-			(*i)->Draw(hdc, g_selectTool.IsSelected(*i));
+			(*i)->Draw(hdc, IsSelected(*i));
 		}
 
 		g_selectTool.DrawManipulators(hdc);
@@ -444,86 +448,89 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 					bool snapped;
 					snapped = false;
 					// checking for object snap
-					if (g_objectSnapEnable && g_curTool != &g_selectTool)
+					if (g_canSnap)
 					{
-						bool first = true;
-						double minDist;
-						Point<double> best;
-						PointType bestType;
-						// finding closest point
-						for (list<CadObject *>::iterator i = g_doc.Objects.begin();
-							i != g_doc.Objects.end(); i++)
+						if (g_objectSnapEnable)
 						{
-							vector<pair<Point<double>, PointType> > points = (*i)->GetPoints();
-							for (vector<pair<Point<double>, PointType> >::iterator j = points.begin();
-								j != points.end(); j++)
+							bool first = true;
+							double minDist;
+							Point<double> best;
+							PointType bestType;
+							// finding closest point
+							for (list<CadObject *>::iterator i = g_doc.Objects.begin();
+								i != g_doc.Objects.end(); i++)
 							{
-								double dx = j->first.X - g_cursorWrld.X;
-								double dy = j->first.Y - g_cursorWrld.Y;
-								double dist = sqrt(dx*dx + dy*dy);
-								if (dist < minDist || first)
+								vector<pair<Point<double>, PointType> > points = (*i)->GetPoints();
+								for (vector<pair<Point<double>, PointType> >::iterator j = points.begin();
+									j != points.end(); j++)
 								{
-									first = false;
-									minDist = dist;
-									best = j->first;
-									bestType = j->second;
+									double dx = j->first.X - g_cursorWrld.X;
+									double dy = j->first.Y - g_cursorWrld.Y;
+									double dist = sqrt(dx*dx + dy*dy);
+									if (dist < minDist || first)
+									{
+										first = false;
+										minDist = dist;
+										best = j->first;
+										bestType = j->second;
+									}
 								}
 							}
-						}
-						// if found
-						if (!first)
-						{
-							Point<int> bestScn = WorldToScreen(best);
-							bool show = false;
-							if (minDist * g_magification < 50)
+							// if found
+							if (!first)
 							{
-								show = true;
-							}
-							if (minDist * g_magification < 5)
-							{
-								g_cursorWrld = best;
-								g_cursorScn = bestScn;
-								snapped = true;
-							}
-							if (show)
-							{
-								bool needDraw = false;
-								if (g_objSnapDrawn)
+								Point<int> bestScn = WorldToScreen(best);
+								bool show = false;
+								if (minDist * g_magification < 50)
 								{
-									if (g_objSnapPos != bestScn || g_objSnapType != bestType)
+									show = true;
+								}
+								if (minDist * g_magification < 5)
+								{
+									g_cursorWrld = best;
+									g_cursorScn = bestScn;
+									snapped = true;
+								}
+								if (show)
+								{
+									bool needDraw = false;
+									if (g_objSnapDrawn)
 									{
-										// erasing
-										DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
+										if (g_objSnapPos != bestScn || g_objSnapType != bestType)
+										{
+											// erasing
+											DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
+											needDraw = true;
+										}
+									}
+									else
+									{
 										needDraw = true;
+									}
+									if (needDraw)
+									{
+										DrawObjectSnap(hdc, bestScn, bestType);
+										g_objSnapDrawn = true;
+										g_objSnapPos = bestScn;
+										g_objSnapType = bestType;
 									}
 								}
 								else
 								{
-									needDraw = true;
-								}
-								if (needDraw)
-								{
-									DrawObjectSnap(hdc, bestScn, bestType);
-									g_objSnapDrawn = true;
-									g_objSnapPos = bestScn;
-									g_objSnapType = bestType;
-								}
-							}
-							else
-							{
-								if (g_objSnapDrawn)
-								{
-									DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
-									g_objSnapDrawn = false;
+									if (g_objSnapDrawn)
+									{
+										DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
+										g_objSnapDrawn = false;
+									}
 								}
 							}
 						}
-					}
-					if (!snapped && g_snapEnable)
-					{
-						g_cursorWrld.X = floor((g_cursorWrld.X + g_snapStep/2)/g_snapStep)*g_snapStep;
-						g_cursorWrld.Y = floor((g_cursorWrld.Y + g_snapStep/2)/g_snapStep)*g_snapStep;
-						g_cursorScn = WorldToScreen(g_cursorWrld);
+						if (!snapped && g_snapEnable)
+						{
+							g_cursorWrld.X = floor((g_cursorWrld.X + g_snapStep/2)/g_snapStep)*g_snapStep;
+							g_cursorWrld.Y = floor((g_cursorWrld.Y + g_snapStep/2)/g_snapStep)*g_snapStep;
+							g_cursorScn = WorldToScreen(g_cursorWrld);
+						}
 					}
 					DrawCursorRaw(hdc, g_cursorScn.X, g_cursorScn.Y);
 					RecalcFantoms();
@@ -569,6 +576,24 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 			break;
 		}
 		return 0;
+	case WM_KEYDOWN:
+		switch (wparam)
+		{
+		case VK_ESCAPE:
+			g_curTool->Cancel();
+			if (g_curTool != &g_selectTool)
+			{
+				g_curTool = &g_selectTool;
+				g_curTool->Start(list<CadObject *>());
+			}
+			InvalidateRect(hwnd, 0, true);
+			UpdateWindow(hwnd);
+			break;
+		default:
+			g_curTool->ProcessInput(hwnd, msg, wparam, lparam);
+			break;
+		}
+		return 0;
 	}
 	g_curTool->ProcessInput(hwnd, msg, wparam, lparam);
 	return DefWindowProc(hwnd, msg, wparam, lparam);
@@ -591,6 +616,16 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 				RBS_VARHEIGHT | CCS_NODIVIDER | RBS_BANDBORDERS | CCS_VERT | CCS_NORESIZE, 0, 0, 0, 0,
 				hwnd, 0, g_hInstance, 0);
 		if (g_leftRebar == 0)
+			return -1;
+		g_rightRebar = CreateWindowExW(0, REBARCLASSNAMEW, 0,
+				WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN |
+				RBS_VARHEIGHT | CCS_NODIVIDER | RBS_BANDBORDERS | CCS_VERT | CCS_NORESIZE, 0, 0, 0, 0,
+				hwnd, 0, g_hInstance, 0);
+		if (g_rightRebar == 0)
+			return -1;
+		g_statusBar = CreateWindowExW(0, STATUSCLASSNAMEW, 0, WS_CHILD | WS_VISIBLE |
+				WS_CLIPSIBLINGS | SBARS_SIZEGRIP, 0, 0, 0, 0, hwnd, 0, g_hInstance, 0);
+		if (g_statusBar == 0)
 			return -1;
 		do
 		{
@@ -636,7 +671,29 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			int buttonHeight = HIWORD(buttonSize);
 			int buttonWidth = LOWORD(buttonSize);
 			MoveWindow(g_htoolbarDraw, 0, 0, buttonWidth * sizeof(buttons) / sizeof(buttons[0]), buttonHeight, false);
-			//SendMessageW(g_htoolbarDraw, TB_AUTOSIZE, 0, 0);
+		}
+		while (false);
+
+		do
+		{
+			g_htoolbarMod = CreateWindowExW(0, TOOLBARCLASSNAMEW, L"", WS_CHILD |
+					WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | TBSTYLE_FLAT |
+					CCS_NORESIZE | CCS_NODIVIDER | TBSTYLE_WRAPABLE, 0, 0, 0, 0, hwnd, 0, g_hInstance, 0);
+			if (!g_htoolbarMod)
+				return -1;
+			TBADDBITMAP tbAddBitmap = { g_hInstance, reinterpret_cast<INT_PTR>(MAKEINTRESOURCEW(IDB_TBMODIFY)) };
+			if (SendMessageW(g_htoolbarMod, TB_ADDBITMAP, 2, reinterpret_cast<LPARAM>(&tbAddBitmap)) == -1)
+				return -1;
+			SendMessageW(g_htoolbarMod, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+			const TBBUTTON buttons[] = {
+				{0, ID_MODIFY_MOVE, TBSTATE_ENABLED, 0, 0, 0 },
+				};
+			if (!SendMessageW(g_htoolbarMod, TB_ADDBUTTONS, sizeof(buttons) / sizeof(buttons[0]), reinterpret_cast<LPARAM>(buttons)))
+				return -1;
+			long buttonSize = SendMessageW(g_htoolbarMod, TB_GETBUTTONSIZE, 0, 0);
+			int buttonHeight = HIWORD(buttonSize);
+			int buttonWidth = LOWORD(buttonSize);
+			MoveWindow(g_htoolbarMod, 0, 0, buttonWidth * sizeof(buttons) / sizeof(buttons[0]), buttonHeight, false);
 		}
 		while (false);
 
@@ -657,22 +714,6 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 					return -1;
 			}
 			while (false);
-			/*do
-			{
-				REBARBANDINFOW bi = {0};
-				bi.cbSize = sizeof(bi);
-				bi.fMask = RBBIM_STYLE | RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_SIZE;
-				bi.fStyle = RBBS_CHILDEDGE | RBBS_GRIPPERALWAYS;
-				bi.hwndChild = g_htoolbarDraw;
-				RECT rect;
-				GetWindowRect(g_htoolbarDraw, &rect);
-				bi.cyMinChild = rect.bottom - rect.top;
-				bi.cxMinChild = rect.right - rect.left;
-				bi.cx = 60;
-				if (!SendMessageW(g_topRebar, RB_INSERTBAND, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(&bi)))
-					return -1;
-			}
-			while (false);*/
 			do
 			{
 				REBARBANDINFOW bi = {0};
@@ -685,6 +726,21 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 				bi.cyMinChild = rect.bottom - rect.top;
 				bi.cxMinChild = rect.right - rect.left;
 				if (!SendMessageW(g_leftRebar, RB_INSERTBAND, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(&bi)))
+					return -1;
+			}
+			while (false);
+			do
+			{
+				REBARBANDINFOW bi = {0};
+				bi.cbSize = sizeof(bi);
+				bi.fMask = RBBIM_STYLE | RBBIM_CHILD | RBBIM_CHILDSIZE;
+				bi.fStyle = RBBS_CHILDEDGE | RBBS_GRIPPERALWAYS;
+				bi.hwndChild = g_htoolbarMod;
+				RECT rect;
+				GetWindowRect(g_htoolbarMod, &rect);
+				bi.cyMinChild = rect.bottom - rect.top;
+				bi.cxMinChild = rect.right - rect.left;
+				if (!SendMessageW(g_rightRebar, RB_INSERTBAND, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(&bi)))
 					return -1;
 			}
 			while (false);
@@ -728,6 +784,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		case ID_VIEW_ZOOM:
 		case ID_DRAW_LINES:
 		case ID_DRAW_ARCS:
+		case ID_MODIFY_MOVE:
 			SelectTool(LOWORD(wparam));
 			return 0;
 		}
@@ -735,14 +792,21 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 	case WM_SIZE:
 		do
 		{
-			long topRebarHeight = static_cast<unsigned int>(SendMessageW(g_topRebar, RB_GETBARHEIGHT, 0, 0));
-			long leftRebarWidth = static_cast<unsigned int>(SendMessageW(g_leftRebar, RB_GETBARHEIGHT, 0, 0));
+			unsigned int topRebarHeight = static_cast<unsigned int>(SendMessageW(g_topRebar, RB_GETBARHEIGHT, 0, 0));
+			unsigned int leftRebarWidth = static_cast<unsigned int>(SendMessageW(g_leftRebar, RB_GETBARHEIGHT, 0, 0));
+			unsigned int rightRebarWidth = static_cast<unsigned int>(SendMessageW(g_leftRebar, RB_GETBARHEIGHT, 0, 0));
+			SendMessageW(g_statusBar, WM_SIZE, 0, 0);
+			RECT sbRect;
+			if (!GetWindowRect(g_statusBar, &sbRect))
+				assert(0);
+			int sbHeight = sbRect.bottom - sbRect.top;
 			int width = LOWORD(lparam);
 			int height = HIWORD(lparam);
 			MoveWindow(g_topRebar, 0, 0, width, topRebarHeight, true);
-			MoveWindow(g_leftRebar, 0, topRebarHeight, leftRebarWidth, height - topRebarHeight, true);
+			MoveWindow(g_leftRebar, 0, topRebarHeight, leftRebarWidth, height - topRebarHeight - sbHeight, true);
+			MoveWindow(g_rightRebar, width - rightRebarWidth, topRebarHeight, rightRebarWidth, height - topRebarHeight - sbHeight, true);
 			MoveWindow(g_hclientWindow, leftRebarWidth, topRebarHeight,
-				width - leftRebarWidth, height - topRebarHeight, true);
+				width - leftRebarWidth - rightRebarWidth, height - topRebarHeight - sbHeight, true);
 		}
 		while (false);
 		return 0;

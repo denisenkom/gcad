@@ -8,11 +8,14 @@
 #include "exmath.h"
 #include <commctrl.h>
 #include <windowsx.h>
+#include <loki/functor.h>
+#include <loki/typelistmacros.h>
 #include <algorithm>
 #include <cmath>
 
 
 using namespace std;
+using namespace Loki;
 
 
 Point<double> g_extentMin = Point<double>(0, 0);
@@ -50,9 +53,12 @@ PanTool g_panTool;
 ZoomTool g_zoomTool;
 DrawLinesTool g_drawLinesTool;
 DrawArcsTool g_drawArcsTool;
+MoveTool g_moveTool;
 Tool * g_curTool = &g_selectTool;
 
 list<Fantom *> g_fantoms;
+
+bool g_canSnap = false;
 
 
 void DrawCursorRaw(HDC hdc, int x, int y)
@@ -62,10 +68,10 @@ void DrawCursorRaw(HDC hdc, int x, int y)
 	switch (g_customCursorType)
 	{
 	case CustomCursorTypeSelect:
-		MoveToEx(hdc, x - 20, y, 0);
-		LineTo(hdc, x + 20, y);
-		MoveToEx(hdc, x, y - 20, 0);
-		LineTo(hdc, x, y + 20);
+		MoveToEx(hdc, x - 30, y, 0);
+		LineTo(hdc, x + 30, y);
+		MoveToEx(hdc, x, y - 30, 0);
+		LineTo(hdc, x, y + 30);
 
 		MoveToEx(hdc, x - 3, y - 3, 0);
 		LineTo(hdc, x - 3, y + 3);
@@ -74,10 +80,17 @@ void DrawCursorRaw(HDC hdc, int x, int y)
 		LineTo(hdc, x - 3, y - 3);
 		break;
 	case CustomCursorTypeCross:
-		MoveToEx(hdc, x - 20, y, 0);
-		LineTo(hdc, x + 20, y);
-		MoveToEx(hdc, x, y - 20, 0);
-		LineTo(hdc, x, y + 20);
+		MoveToEx(hdc, x - 30, y, 0);
+		LineTo(hdc, x + 30, y);
+		MoveToEx(hdc, x, y - 30, 0);
+		LineTo(hdc, x, y + 30);
+		break;
+	case CustomCursorTypeBox:
+		MoveToEx(hdc, x - 3, y - 3, 0);
+		LineTo(hdc, x - 3, y + 3);
+		LineTo(hdc, x + 3, y + 3);
+		LineTo(hdc, x + 3, y - 3);
+		LineTo(hdc, x - 3, y - 3);
 		break;
 	default:
 		assert(0);
@@ -132,6 +145,35 @@ Fantom * CadLine::CreateFantom(int param)
 	int iparam = reinterpret_cast<int>(param);
 	FantomLine * result = new FantomLine(iparam, iparam == 1 ? Point1 : Point2);
 	return result;
+}
+
+
+void CadLine::Move(Point<double> displacement)
+{
+	Point1.X += displacement.X;
+	Point1.Y += displacement.Y;
+	Point2.X += displacement.X;
+	Point2.Y += displacement.Y;
+}
+
+
+CadObject * CadLine::Clone()
+{
+	return new CadLine(*this);
+}
+
+
+void CadLine::Assign(CadObject * rhs)
+{
+	CadLine * line = dynamic_cast<CadLine *>(rhs);
+	assert(line != 0);
+	Assign(line);
+}
+
+
+void CadLine::Assign(CadLine * line)
+{
+	*this = *line;
 }
 
 
@@ -228,6 +270,37 @@ Fantom * CadArc::CreateFantom(int param)
 	CalcMiddlePointOfArc(Center.X, Center.Y, Radius, Start.X, Start.Y, End.X, End.Y, Ccw, middle.X, middle.Y);
 	FantomArc * result = new FantomArc(param, Start, middle, End);
 	return result;
+}
+
+
+void CadArc::Move(Point<double> displacement)
+{
+	Center.X += displacement.X;
+	Center.Y += displacement.Y;
+	Start.X += displacement.X;
+	Start.Y += displacement.Y;
+	End.X += displacement.X;
+	End.Y += displacement.Y;
+}
+
+
+CadObject * CadArc::Clone()
+{
+	return new CadArc(*this);
+}
+
+
+void CadArc::Assign(CadObject * rhs)
+{
+	CadArc * arc = dynamic_cast<CadArc *>(rhs);
+	assert(arc != 0);
+	Assign(arc);
+}
+
+
+void CadArc::Assign(CadArc * arc)
+{
+	*this = *arc;
 }
 
 
@@ -408,38 +481,78 @@ void ExtendVScrollLimits(SCROLLINFO & si)
 }
 
 
+static std::list<CadObject *> m_selected;
+
 void SelectTool(int toolId)
 {
 	const ToolInfo & toolInfo = ToolById(toolId);
+	list<CadObject *> selected;
+	if (g_curTool == &g_selectTool)
+		selected = m_selected;
+	g_curTool->Exiting();
 	g_curTool = &toolInfo.Tool;
-	switch (toolId)
+	g_curTool->Start(selected);
+	InvalidateRect(g_hclientWindow, 0, true);
+	UpdateWindow(g_hclientWindow);
+}
+
+
+Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> g_selectHandler;
+bool IsSelected(const CadObject * obj)
+{
+	for (std::list<CadObject *>::const_iterator i = m_selected.begin();
+		i != m_selected.end(); i++)
 	{
-	case ID_VIEW_SELECT:
-		g_cursorType = CursorTypeManual;
-		g_cursorHandle = 0;
-		g_customCursorType = CustomCursorTypeSelect;
-		break;
-	case ID_VIEW_PAN:
-		g_cursorType = CursorTypeSystem;
-		g_cursorHandle = LoadCursorW(g_hInstance, MAKEINTRESOURCEW(IDC_PAN));
-		break;
-	case ID_VIEW_ZOOM:
-		g_cursorType = CursorTypeSystem;
-		g_cursorHandle = LoadCursorW(g_hInstance, MAKEINTRESOURCEW(IDC_ZOOM));
-		break;
-	case ID_DRAW_LINES:
-		g_cursorType = CursorTypeManual;
-		g_cursorHandle = 0;
-		g_customCursorType = CustomCursorTypeCross;
-		break;
-	case ID_DRAW_ARCS:
-		g_cursorType = CursorTypeManual;
-		g_cursorHandle = 0;
-		g_customCursorType = CustomCursorTypeCross;
-		g_drawArcsTool.Start();
-		break;
-	default:
-		assert(0);
+		if (*i == obj)
+			return true;
+	}
+	return false;
+}
+
+
+static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+{
+	switch (msg)
+	{
+	case WM_LBUTTONUP:
+		Point<double> leftbot = ScreenToWorld(g_cursorScn.X - 3, g_cursorScn.Y + 3);
+		Point<double> righttop = ScreenToWorld(g_cursorScn.X + 3, g_cursorScn.Y - 3);
+		if (GetKeyState(VK_SHIFT) & 0x8000)
+		{
+			// removing selection
+			for (list<CadObject *>::reverse_iterator i = m_selected.rbegin();
+				i != m_selected.rend(); i++)
+			{
+				if ((*i)->IntersectsRect(leftbot.X, leftbot.Y, righttop.X, righttop.Y))
+				{
+					if (g_selectHandler)
+						g_selectHandler(*i, false);
+					m_selected.erase((++i).base());
+					InvalidateRect(hwnd, 0, true);
+					UpdateWindow(hwnd);
+					break;
+				}
+			}
+		}
+		else
+		{
+			// selecting single cad object, if clicked on it
+			for (list<CadObject *>::reverse_iterator i = g_doc.Objects.rbegin();
+				i != g_doc.Objects.rend(); i++)
+			{
+				if (IsSelected(*i))
+					continue;
+				if ((*i)->IntersectsRect(leftbot.X, leftbot.Y, righttop.X, righttop.Y))
+				{
+					m_selected.push_back(*i);
+					if (g_selectHandler != 0)
+						g_selectHandler(*i, true);
+					InvalidateRect(hwnd, 0, true);
+					UpdateWindow(hwnd);
+					break;
+				}
+			}
+		}
 		break;
 	}
 }
@@ -453,26 +566,7 @@ void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 		switch (m_state)
 		{
 		case Selecting:
-		{
-			Point<double> leftbot = ScreenToWorld(g_cursorScn.X - 3, g_cursorScn.Y + 3);
-			Point<double> righttop = ScreenToWorld(g_cursorScn.X + 3, g_cursorScn.Y - 3);
-			if (GetKeyState(VK_SHIFT) & 0x8000)
-			{
-				// removing selection
-				for (list<CadObject *>::reverse_iterator i = m_selected.rbegin();
-					i != m_selected.rend(); i++)
-				{
-					if ((*i)->IntersectsRect(leftbot.X, leftbot.Y, righttop.X, righttop.Y))
-					{
-						RemoveManipulators(*i);
-						m_selected.erase((++i).base());
-						InvalidateRect(hwnd, 0, true);
-						UpdateWindow(hwnd);
-						break;
-					}
-				}
-			}
-			else
+			do
 			{
 				// begin moving manipulator if clicked in it
 				// selecting closest manipulator
@@ -517,26 +611,15 @@ void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 					if (g_cursorDrawn)
 						DrawCursor(hdc);
 					m_state = MovingManip;
+					g_canSnap = true;
 					break;
 				}
-
-				// selecting single cad object, if clicked on it
-				for (list<CadObject *>::reverse_iterator i = g_doc.Objects.rbegin();
-					i != g_doc.Objects.rend(); i++)
+				else
 				{
-					if (IsSelected(*i))
-						continue;
-					if ((*i)->IntersectsRect(leftbot.X, leftbot.Y, righttop.X, righttop.Y))
-					{
-						m_selected.push_back(*i);
-						AddManipulators(*i);
-						InvalidateRect(hwnd, 0, true);
-						UpdateWindow(hwnd);
-						break;
-					}
+					SelectProcessInput(hwnd, msg, wparam, lparam);
 				}
 			}
-		}
+			while (false);
 			break;
 		case MovingManip:
 			list<Fantom*>::iterator ifan = g_fantoms.begin();
@@ -561,26 +644,6 @@ void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 	case WM_KEYDOWN:
 		switch (wparam)
 		{
-		case VK_ESCAPE:
-			switch (m_state)
-			{
-			case Selecting:
-				if (m_selected.size() != 0)
-				{
-					m_manipulators.clear();
-					m_selected.clear();
-					InvalidateRect(hwnd, 0, true);
-				}
-				break;
-			case MovingManip:
-				m_manipulated.clear();
-				DeleteFantoms(false);
-				g_customCursorType = CustomCursorTypeSelect;
-				m_state = Selecting;
-				InvalidateRect(hwnd, 0, true);
-				break;
-			}
-			break;
 		case VK_DELETE:
 			switch (m_state)
 			{
@@ -619,6 +682,69 @@ void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 		}
 		break;
 	}
+}
+
+
+void SelectorTool::Start(const std::list<CadObject *> & /*selected*/)
+{
+	g_cursorType = CursorTypeManual;
+	g_cursorHandle = 0;
+	g_customCursorType = CustomCursorTypeSelect;
+	Functor<void, LOKI_TYPELIST_2(CadObject*,bool)> handler(this, &SelectorTool::SelectHandler);
+	g_selectHandler = handler;
+	g_canSnap = false;
+}
+
+
+void SelectorTool::Cancel()
+{
+	switch (m_state)
+	{
+	case Selecting:
+		if (m_selected.size() != 0)
+		{
+			m_manipulators.clear();
+			m_selected.clear();
+		}
+		break;
+	case MovingManip:
+		m_manipulated.clear();
+		DeleteFantoms(false);
+		g_customCursorType = CustomCursorTypeSelect;
+		m_state = Selecting;
+		g_canSnap = false;
+		break;
+	}
+}
+
+
+void SelectorTool::Exiting()
+{
+	switch (m_state)
+	{
+	case MovingManip:
+		m_manipulated.clear();
+		DeleteFantoms(false);
+		g_customCursorType = CustomCursorTypeSelect;
+		m_state = Selecting;
+		g_canSnap = false;
+	case Selecting:
+		if (m_selected.size() != 0)
+		{
+			m_manipulators.clear();
+			m_selected.clear();
+		}
+		break;
+	}
+}
+
+
+void SelectorTool::SelectHandler(CadObject * obj, bool select)
+{
+	if (select)
+		AddManipulators(obj);
+	else
+		RemoveManipulators(obj);
 }
 
 
@@ -746,6 +872,14 @@ void ZoomTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 }
 
 
+void ZoomTool::Start(const std::list<CadObject *> & /*selected*/)
+{
+	g_cursorType = CursorTypeSystem;
+	g_cursorHandle = LoadCursorW(g_hInstance, MAKEINTRESOURCEW(IDC_ZOOM));
+	g_canSnap = false;
+}
+
+
 void PanTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
@@ -791,6 +925,14 @@ void PanTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lp
 }
 
 
+void PanTool::Start(const std::list<CadObject *> & /*selected*/)
+{
+	g_cursorType = CursorTypeSystem;
+	g_cursorHandle = LoadCursorW(g_hInstance, MAKEINTRESOURCEW(IDC_PAN));
+	g_canSnap = false;
+}
+
+
 void DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
@@ -833,37 +975,29 @@ void DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPA
 		}
 		while (false);
 		break;
-	case WM_KEYDOWN:
-		switch (wparam)
-		{
-		case VK_ESCAPE:
-			try
-			{
-				ClientDC hdc(hwnd);
-				DeleteFantoms(hdc);
-				if (g_cursorDrawn)
-					DrawCursor(hdc);
-			}
-			catch (WindowsError &)
-			{
-			}
-			m_selectingSecondPoint = false;
-			SelectTool(ID_VIEW_SELECT);
-			if (g_cursorDrawn)
-			{
-				try
-				{
-					ClientDC hdc(hwnd);
-					DrawCursor(hdc);
-				}
-				catch (WindowsError &)
-				{
-				}
-			}
-			break;
-		}
-		break;
 	}
+}
+
+
+void DrawLinesTool::Start(const std::list<CadObject *> & /*selected*/)
+{
+	g_cursorType = CursorTypeManual;
+	g_cursorHandle = 0;
+	g_customCursorType = CustomCursorTypeCross;
+	g_canSnap = true;
+}
+
+
+void DrawLinesTool::Cancel()
+{
+	Exiting();
+}
+
+
+void DrawLinesTool::Exiting()
+{
+	DeleteFantoms(false);
+	m_selectingSecondPoint = false;
 }
 
 
@@ -924,36 +1058,185 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			break;
 		}
 		break;
-	case WM_KEYDOWN:
-		switch (wparam)
+	}
+}
+
+
+void DrawArcsTool::Start(const std::list<CadObject *> & /*selected*/)
+{
+	g_cursorType = CursorTypeManual;
+	g_cursorHandle = 0;
+	g_customCursorType = CustomCursorTypeCross;
+	m_state = StateSelectingFirstPoint;
+	g_canSnap = true;
+}
+
+
+void DrawArcsTool::Cancel()
+{
+	Exiting();
+}
+
+
+void DrawArcsTool::Exiting()
+{
+	DeleteFantoms(false);
+}
+
+
+void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+{
+	switch (m_state)
+	{
+	case StateSelecting:
+		switch (msg)
 		{
-		case VK_ESCAPE:
-			try
+		case WM_KEYDOWN:
+			switch (wparam)
 			{
-				ClientDC hdc(hwnd);
-				DeleteFantoms(hdc);
-				if (g_cursorDrawn)
-					DrawCursor(hdc);
-			}
-			catch (WindowsError &)
-			{
-			}
-			SelectTool(ID_VIEW_SELECT);
-			if (g_cursorDrawn)
-			{
-				try
+			case VK_RETURN:
+				m_state = StateChoosingBasePoint;
+				do
 				{
 					ClientDC hdc(hwnd);
-					DrawCursor(hdc);
+					if (g_cursorDrawn)
+						DrawCursor(hdc);
+					g_customCursorType = CustomCursorTypeCross;
+					if (g_cursorDrawn)
+						DrawCursor(hdc);
 				}
-				catch (WindowsError &)
-				{
-				}
+				while (false);
+				g_canSnap = true;
+				break;
+			default:
+				SelectProcessInput(hwnd, msg, wparam, lparam);
+				break;
 			}
+			break;
+		default:
+			SelectProcessInput(hwnd, msg, wparam, lparam);
 			break;
 		}
 		break;
+	case StateChoosingBasePoint:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			m_basePoint = g_cursorWrld;
+			do
+			{
+				FantomLine * fantomLine = new FantomLine(m_basePoint);
+				g_fantoms.push_back(fantomLine);
+				ClientDC hdc(hwnd);
+				SetROP2(hdc, R2_XORPEN);
+				fantomLine->Draw(hdc);
+				m_state = StateChoosingDestPoint;
+				DeleteCopies();
+				m_objects.resize(m_selected.size());
+				int no = 0;
+				for (list<CadObject*>::iterator i = m_selected.begin();
+					i != m_selected.end(); i++, no++)
+				{
+					m_objects[no] = (*i)->Clone();
+				}
+			}
+			while (false);
+			break;
+		}
+		break;
+	case StateChoosingDestPoint:
+		switch (msg)
+		{
+		case WM_MOUSEMOVE:
+			do
+			{
+				Point<double> displacement(g_cursorWrld.X - m_basePoint.X, g_cursorWrld.Y - m_basePoint.Y);
+				ClientDC hdc(hwnd);
+				SetROP2(hdc, R2_XORPEN);
+				for (vector<CadObject*>::iterator i = m_objects.begin();
+					i != m_objects.end(); i++)
+				{
+					(*i)->Draw(hdc, false);
+					(*i)->Move(displacement);
+					(*i)->Draw(hdc, false);
+				}
+				m_basePoint = g_cursorWrld;
+			}
+			while (false);
+			break;
+		case WM_LBUTTONUP:
+			do
+			{
+				int no = 0;
+				for (list<CadObject*>::iterator i = m_selected.begin();
+					i != m_selected.end(); i++, no++)
+				{
+					(*i)->Assign(m_objects[no]);
+				}
+				DeleteCopies();
+				DeleteFantoms(false);
+				m_selected.clear();
+				SelectTool(ID_VIEW_SELECT);
+				InvalidateRect(hwnd, 0, true);
+				UpdateWindow(hwnd);
+			}
+			while (false);
+			break;
+		}
+		break;
+	default:
+		assert(0);
+		break;
 	}
+}
+
+
+void MoveTool::Start(const std::list<CadObject *> & selected)
+{
+	if (selected.size() == 0)
+	{
+		m_state = StateSelecting;
+		g_cursorType = CursorTypeManual;
+		g_cursorHandle = 0;
+		g_customCursorType = CustomCursorTypeBox;
+		g_selectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
+		g_canSnap = false;
+	}
+	else
+	{
+		m_selected = selected;
+		m_state = StateChoosingBasePoint;
+		g_cursorType = CursorTypeManual;
+		g_cursorHandle = 0;
+		g_customCursorType = CustomCursorTypeCross;
+		g_selectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
+		g_canSnap = true;
+	}
+}
+
+
+void MoveTool::Cancel()
+{
+	Exiting();
+}
+
+
+void MoveTool::Exiting()
+{
+	DeleteFantoms(false);
+	DeleteCopies();
+	m_selected.clear();
+}
+
+
+void MoveTool::DeleteCopies()
+{
+	for (vector<CadObject*>::iterator i = m_objects.begin();
+		i != m_objects.end(); i++)
+	{
+		delete *i;
+	}
+	m_objects.resize(0);
 }
 
 
