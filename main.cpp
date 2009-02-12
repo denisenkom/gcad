@@ -92,6 +92,8 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 		si.nMax = g_hscrollMax;
 		si.nPos = g_hscrollPos;
 		SetScrollInfo(hwnd, SB_HORZ, &si, true);}
+
+		g_selectTool.Start(list<CadObject*>());
 		}
 		return 0;
 	case WM_DESTROY:
@@ -1029,7 +1031,6 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 						}
 					}
 					InvalidateRect(g_hclientWindow, 0, true);
-					MessageBoxW(hwnd, L"Импорт выполнен", L"GCad", MB_ICONINFORMATION);
 				}
 				catch (wstring & err)
 				{
