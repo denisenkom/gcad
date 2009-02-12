@@ -56,6 +56,7 @@ IDR_MAINMENU MENU
 BEGIN
     POPUP "Файл"
     BEGIN
+        MENUITEM "Импорт DXF",                  ID_FILE_IMPORTDXF
         MENUITEM "Выход",                       ID_FILE_CLOSE
     END
     POPUP "Вид"

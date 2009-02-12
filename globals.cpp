@@ -481,14 +481,14 @@ void ExtendVScrollLimits(SCROLLINFO & si)
 }
 
 
-static std::list<CadObject *> m_selected;
+static std::list<CadObject *> g_selected;
 
 void SelectTool(int toolId)
 {
 	const ToolInfo & toolInfo = ToolById(toolId);
 	list<CadObject *> selected;
 	if (g_curTool == &g_selectTool)
-		selected = m_selected;
+		selected = g_selected;
 	g_curTool->Exiting();
 	g_curTool = &toolInfo.Tool;
 	g_curTool->Start(selected);
@@ -500,8 +500,8 @@ void SelectTool(int toolId)
 Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> g_selectHandler;
 bool IsSelected(const CadObject * obj)
 {
-	for (std::list<CadObject *>::const_iterator i = m_selected.begin();
-		i != m_selected.end(); i++)
+	for (std::list<CadObject *>::const_iterator i = g_selected.begin();
+		i != g_selected.end(); i++)
 	{
 		if (*i == obj)
 			return true;
@@ -520,14 +520,14 @@ static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 		if (GetKeyState(VK_SHIFT) & 0x8000)
 		{
 			// removing selection
-			for (list<CadObject *>::reverse_iterator i = m_selected.rbegin();
-				i != m_selected.rend(); i++)
+			for (list<CadObject *>::reverse_iterator i = g_selected.rbegin();
+				i != g_selected.rend(); i++)
 			{
 				if ((*i)->IntersectsRect(leftbot.X, leftbot.Y, righttop.X, righttop.Y))
 				{
 					if (g_selectHandler)
 						g_selectHandler(*i, false);
-					m_selected.erase((++i).base());
+					g_selected.erase((++i).base());
 					InvalidateRect(hwnd, 0, true);
 					UpdateWindow(hwnd);
 					break;
@@ -544,7 +544,7 @@ static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 					continue;
 				if ((*i)->IntersectsRect(leftbot.X, leftbot.Y, righttop.X, righttop.Y))
 				{
-					m_selected.push_back(*i);
+					g_selected.push_back(*i);
 					if (g_selectHandler != 0)
 						g_selectHandler(*i, true);
 					InvalidateRect(hwnd, 0, true);
@@ -650,18 +650,18 @@ void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			case Selecting:
 			{
 				bool needRefresh = false;
-				while (m_selected.size() != 0)
+				while (g_selected.size() != 0)
 				{
 					needRefresh = true;
 					bool found = false;
-					list<CadObject *>::iterator i = m_selected.begin();
+					list<CadObject *>::iterator i = g_selected.begin();
 					for (list<CadObject *>::iterator j = g_doc.Objects.begin();
 						j != g_doc.Objects.end(); j++)
 					{
 						if (*i == *j)
 						{
 							CadObject * obj = *i;
-							m_selected.erase(i);
+							g_selected.erase(i);
 							g_doc.Objects.erase(j);
 							RemoveManipulators(obj);
 							delete obj;
@@ -701,10 +701,10 @@ void SelectorTool::Cancel()
 	switch (m_state)
 	{
 	case Selecting:
-		if (m_selected.size() != 0)
+		if (g_selected.size() != 0)
 		{
 			m_manipulators.clear();
-			m_selected.clear();
+			g_selected.clear();
 		}
 		break;
 	case MovingManip:
@@ -729,10 +729,10 @@ void SelectorTool::Exiting()
 		m_state = Selecting;
 		g_canSnap = false;
 	case Selecting:
-		if (m_selected.size() != 0)
+		if (g_selected.size() != 0)
 		{
 			m_manipulators.clear();
-			m_selected.clear();
+			g_selected.clear();
 		}
 		break;
 	}
@@ -1132,10 +1132,10 @@ void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 				fantomLine->Draw(hdc);
 				m_state = StateChoosingDestPoint;
 				DeleteCopies();
-				m_objects.resize(m_selected.size());
+				m_objects.resize(g_selected.size());
 				int no = 0;
-				for (list<CadObject*>::iterator i = m_selected.begin();
-					i != m_selected.end(); i++, no++)
+				for (list<CadObject*>::iterator i = g_selected.begin();
+					i != g_selected.end(); i++, no++)
 				{
 					m_objects[no] = (*i)->Clone();
 				}
@@ -1168,14 +1168,14 @@ void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 			do
 			{
 				int no = 0;
-				for (list<CadObject*>::iterator i = m_selected.begin();
-					i != m_selected.end(); i++, no++)
+				for (list<CadObject*>::iterator i = g_selected.begin();
+					i != g_selected.end(); i++, no++)
 				{
 					(*i)->Assign(m_objects[no]);
 				}
 				DeleteCopies();
 				DeleteFantoms(false);
-				m_selected.clear();
+				g_selected.clear();
 				SelectTool(ID_VIEW_SELECT);
 				InvalidateRect(hwnd, 0, true);
 				UpdateWindow(hwnd);
@@ -1204,7 +1204,7 @@ void MoveTool::Start(const std::list<CadObject *> & selected)
 	}
 	else
 	{
-		m_selected = selected;
+		g_selected = selected;
 		m_state = StateChoosingBasePoint;
 		g_cursorType = CursorTypeManual;
 		g_cursorHandle = 0;
@@ -1225,7 +1225,7 @@ void MoveTool::Exiting()
 {
 	DeleteFantoms(false);
 	DeleteCopies();
-	m_selected.clear();
+	g_selected.clear();
 }
 
 

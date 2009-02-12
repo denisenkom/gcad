@@ -367,6 +367,61 @@ public:
 	::Tool & Tool;
 };
 
+namespace Private
+{
+	struct LocalAllocStrRef
+	{
+		wchar_t * m_buf;
+		explicit LocalAllocStrRef(wchar_t * buf) : m_buf(buf) {}
+	};
+}
+
+
+class LocalAllocStr
+{
+public:
+	LocalAllocStr(LocalAllocStr & orig) { m_buf = orig.Release(); }
+	LocalAllocStr(Private::LocalAllocStrRef orig) : m_buf(orig.m_buf) {}
+	~LocalAllocStr() { if (m_buf != 0) if (LocalFree(m_buf) != 0) assert(0); }
+	const wchar_t * c_str() const { assert(m_buf != 0); return m_buf; }
+	operator LocalAllocStr() { return LocalAllocStr(this->Release()); }
+	operator Private::LocalAllocStrRef() { return Private::LocalAllocStrRef(this->Release()); }
+
+	inline friend LocalAllocStr GetWinErrorStr(unsigned long err = GetLastError())
+	{
+		LocalAllocStr result;
+		if (!FormatMessageW(
+				FORMAT_MESSAGE_FROM_SYSTEM |
+				FORMAT_MESSAGE_ALLOCATE_BUFFER |
+				FORMAT_MESSAGE_IGNORE_INSERTS,
+				0, err, 0, reinterpret_cast<wchar_t*>(&result.m_buf), 0, 0))
+		{
+			assert(0);
+		}
+		return result;
+	}
+private:
+	wchar_t * m_buf;
+
+	LocalAllocStr() : m_buf(0) {}
+	explicit LocalAllocStr(wchar_t * buf) : m_buf(buf) {}
+	LocalAllocStr & operator=(LocalAllocStr & orig) { this->~LocalAllocStr(); m_buf = orig.Release(); return *this; }
+	wchar_t * Release() { wchar_t * result = m_buf; m_buf = 0; return result; }
+};
+LocalAllocStr fn();
+
+
+class WinHandle
+{
+public:
+	WinHandle(HANDLE h) : m_h(h) {}
+	~WinHandle() { if (!!*this) if (!CloseHandle(m_h)) assert(0); }
+	bool operator ! () { return m_h == INVALID_HANDLE_VALUE || m_h == 0; }
+	HANDLE get() { assert(!!*this); return m_h; }
+private:
+	HANDLE m_h;
+};
+
 
 extern SelectorTool g_selectTool;
 extern PanTool g_panTool;

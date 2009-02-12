@@ -9,10 +9,9 @@
 #define IDB_TBMODIFY                    111
 #define IDC_PAN                         113
 #define IDC_ZOOM                        116
-#define ID_FILE_CLOSE					40002
 #define ID_VIEW_SELECT                  40001
-#define ID_40002                        40002
-#define ID_40003                        40003
+#define ID_FILE_CLOSE					40002
+#define ID_FILE_IMPORTDXF               40003
 #define ID_VIEW_ZOOM                    40004
 #define ID_VIEW_PAN                     40005
 #define ID_40006                        40006
