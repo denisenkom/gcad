@@ -48,13 +48,14 @@ Point<double> g_cursorWrld;
 
 Document g_doc;
 
-SelectorTool g_selectTool;
+Selector g_selector;
+DefaultTool g_defaultTool;
 PanTool g_panTool;
 ZoomTool g_zoomTool;
 DrawLinesTool g_drawLinesTool;
 DrawArcsTool g_drawArcsTool;
 MoveTool g_moveTool;
-Tool * g_curTool = &g_selectTool;
+Tool * g_curTool = &g_defaultTool;
 
 list<Fantom *> g_fantoms;
 
@@ -493,7 +494,7 @@ void SelectTool(int toolId)
 {
 	const ToolInfo & toolInfo = ToolById(toolId);
 	list<CadObject *> selected;
-	if (g_curTool == &g_selectTool)
+	if (g_curTool == &g_defaultTool)
 		selected = g_selected;
 	g_curTool->Exiting();
 	g_curTool = &toolInfo.Tool;
@@ -503,7 +504,6 @@ void SelectTool(int toolId)
 }
 
 
-Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> g_selectHandler;
 bool IsSelected(const CadObject * obj)
 {
 	for (std::list<CadObject *>::const_iterator i = g_selected.begin();
@@ -514,12 +514,6 @@ bool IsSelected(const CadObject * obj)
 	}
 	return false;
 }
-
-
-static bool s_lassoOn = false;
-static Point<double> s_lassoPt1;
-static Point<double> s_lassoPt2;
-static bool s_lassoDrawn = false;
 
 
 void MyRectangle(HDC hdc, Point<int> pt1, Point<int> pt2)
@@ -533,47 +527,47 @@ void MyRectangle(HDC hdc, Point<int> pt1, Point<int> pt2)
 }
 
 
-static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+void Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
 	{
 	case WM_LBUTTONDOWN:
-		s_lassoPt2 = s_lassoPt1 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
-		s_lassoOn = true;
+		m_lassoPt2 = m_lassoPt1 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
+		m_lassoOn = true;
 		break;
 	case WM_MOUSEMOVE:
-		if (s_lassoOn)
+		if (m_lassoOn)
 		{
 			ClientDC hdc(hwnd);
 			SelectObject(hdc, GetStockObject(NULL_BRUSH));
-			if (s_lassoPt2.X < s_lassoPt1.X)
+			if (m_lassoPt2.X < m_lassoPt1.X)
 				SelectObject(hdc, g_selectedLineHPen);
 			else
 				SelectObject(hdc, g_lineHPen);
 			SetROP2(hdc, R2_XORPEN);
-			Point<int> scnPt1 = WorldToScreen(s_lassoPt1);
-			Point<int> scnPt2 = WorldToScreen(s_lassoPt2);
-			if (s_lassoDrawn)
+			Point<int> scnPt1 = WorldToScreen(m_lassoPt1);
+			Point<int> scnPt2 = WorldToScreen(m_lassoPt2);
+			if (m_lassoDrawn)
 				MyRectangle(hdc, scnPt1, scnPt2);
-			s_lassoPt2 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
+			m_lassoPt2 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
 			scnPt2 = g_cursorScn;
-			if (s_lassoPt2.X < s_lassoPt1.X)
+			if (m_lassoPt2.X < m_lassoPt1.X)
 				SelectObject(hdc, g_selectedLineHPen);
 			else
 				SelectObject(hdc, g_lineHPen);
 			MyRectangle(hdc, scnPt1, scnPt2);
-			s_lassoDrawn = true;
+			m_lassoDrawn = true;
 		}
 		break;
 	case WM_LBUTTONUP:
 		Rect<double> testRect;
 		bool multiselect;
 		bool intersect;
-		if (s_lassoOn && s_lassoPt1 != s_lassoPt2)
+		if (m_lassoOn && m_lassoPt1 != m_lassoPt2)
 		{
-			testRect = Rect<double>(s_lassoPt1, s_lassoPt2).Normalized();
+			testRect = Rect<double>(m_lassoPt1, m_lassoPt2).Normalized();
 			multiselect = true;
-			intersect = s_lassoPt1.X > s_lassoPt2.X;
+			intersect = m_lassoPt1.X > m_lassoPt2.X;
 		}
 		else
 		{
@@ -582,10 +576,10 @@ static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 			multiselect = false;
 			intersect = true;
 		}
-		s_lassoOn = false;
-		if (s_lassoDrawn)
+		m_lassoOn = false;
+		if (m_lassoDrawn)
 		{
-			s_lassoDrawn = false;
+			m_lassoDrawn = false;
 			InvalidateRect(hwnd, 0, true);
 		}
 		if (GetKeyState(VK_SHIFT) & 0x8000)
@@ -602,8 +596,8 @@ static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 					good = IsLeftContainsRight(testRect, (*i)->GetBoundingRect());
 				if (good)
 				{
-					if (g_selectHandler)
-						g_selectHandler(*i, false);
+					if (SelectHandler)
+						SelectHandler(*i, false);
 					i = g_selected.erase(i);
 					InvalidateRect(hwnd, 0, true);
 					if (!multiselect)
@@ -627,8 +621,8 @@ static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 				if (good)
 				{
 					g_selected.push_back(*i);
-					if (g_selectHandler != 0)
-						g_selectHandler(*i, true);
+					if (SelectHandler != 0)
+						SelectHandler(*i, true);
 					InvalidateRect(hwnd, 0, true);
 					if (!multiselect)
 						break;
@@ -640,7 +634,20 @@ static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 }
 
 
-void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+void Selector::Cancel()
+{
+	m_lassoOn = false;
+	if (m_lassoDrawn)
+	{
+		m_lassoDrawn = false;
+		InvalidateRect(g_hclientWindow, 0, true);
+	}
+	if (g_selected.size() != 0)
+		g_selected.clear();
+}
+
+
+void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (m_state)
 	{
@@ -648,7 +655,7 @@ void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 		switch (msg)
 		{
 		case WM_LBUTTONDOWN:
-			SelectProcessInput(hwnd, msg, wparam, lparam);
+			g_selector.ProcessInput(hwnd, msg, wparam, lparam);
 			break;
 		case WM_LBUTTONUP:
 			do
@@ -701,13 +708,13 @@ void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 				}
 				else
 				{
-					SelectProcessInput(hwnd, msg, wparam, lparam);
+					g_selector.ProcessInput(hwnd, msg, wparam, lparam);
 				}
 			}
 			while (false);
 			break;
 		case WM_MOUSEMOVE:
-			SelectProcessInput(hwnd, msg, wparam, lparam);
+			g_selector.ProcessInput(hwnd, msg, wparam, lparam);
 			break;
 		case WM_KEYDOWN:
 			switch (wparam)
@@ -773,27 +780,24 @@ void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 }
 
 
-void SelectorTool::Start(const std::list<CadObject *> & /*selected*/)
+void DefaultTool::Start(const std::list<CadObject *> & /*selected*/)
 {
 	g_cursorType = CursorTypeManual;
 	g_cursorHandle = 0;
 	g_customCursorType = CustomCursorTypeSelect;
-	Functor<void, LOKI_TYPELIST_2(CadObject*,bool)> handler(this, &SelectorTool::SelectHandler);
-	g_selectHandler = handler;
+	Functor<void, LOKI_TYPELIST_2(CadObject*,bool)> handler(this, &DefaultTool::SelectHandler);
+	g_selector.SelectHandler = handler;
 	g_canSnap = false;
 }
 
 
-void SelectorTool::Cancel()
+void DefaultTool::Cancel()
 {
 	switch (m_state)
 	{
 	case Selecting:
-		if (g_selected.size() != 0)
-		{
-			m_manipulators.clear();
-			g_selected.clear();
-		}
+		g_selector.Cancel();
+		m_manipulators.clear();
 		break;
 	case MovingManip:
 		m_manipulated.clear();
@@ -806,7 +810,7 @@ void SelectorTool::Cancel()
 }
 
 
-void SelectorTool::Exiting()
+void DefaultTool::Exiting()
 {
 	switch (m_state)
 	{
@@ -827,7 +831,7 @@ void SelectorTool::Exiting()
 }
 
 
-void SelectorTool::SelectHandler(CadObject * obj, bool select)
+void DefaultTool::SelectHandler(CadObject * obj, bool select)
 {
 	if (select)
 		AddManipulators(obj);
@@ -836,7 +840,7 @@ void SelectorTool::SelectHandler(CadObject * obj, bool select)
 }
 
 
-void SelectorTool::AddManipulators(CadObject * obj)
+void DefaultTool::AddManipulators(CadObject * obj)
 {
 	vector<Point<double> > manips = obj->GetManipulators();
 	size_t ulManipsNum = manips.size();
@@ -865,7 +869,7 @@ void SelectorTool::AddManipulators(CadObject * obj)
 }
 
 
-void SelectorTool::RemoveManipulators(CadObject * obj)
+void DefaultTool::RemoveManipulators(CadObject * obj)
 {
 	for (list<Manipulator>::iterator i = m_manipulators.begin();
 		i != m_manipulators.end();)
@@ -886,7 +890,7 @@ void SelectorTool::RemoveManipulators(CadObject * obj)
 }
 
 
-void SelectorTool::DrawManipulators(HDC hdc)
+void DefaultTool::DrawManipulators(HDC hdc)
 {
 	for (list<Manipulator>::const_iterator i = m_manipulators.begin();
 		i != m_manipulators.end(); i++)
@@ -1197,12 +1201,12 @@ void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 				g_canSnap = true;
 				break;
 			default:
-				SelectProcessInput(hwnd, msg, wparam, lparam);
+				g_selector.ProcessInput(hwnd, msg, wparam, lparam);
 				break;
 			}
 			break;
 		default:
-			SelectProcessInput(hwnd, msg, wparam, lparam);
+			g_selector.ProcessInput(hwnd, msg, wparam, lparam);
 			break;
 		}
 		break;
@@ -1287,7 +1291,7 @@ void MoveTool::Start(const std::list<CadObject *> & selected)
 		g_cursorType = CursorTypeManual;
 		g_cursorHandle = 0;
 		g_customCursorType = CustomCursorTypeBox;
-		g_selectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
+		g_selector.SelectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
 		g_canSnap = false;
 	}
 	else
@@ -1297,7 +1301,7 @@ void MoveTool::Start(const std::list<CadObject *> & selected)
 		g_cursorType = CursorTypeManual;
 		g_cursorHandle = 0;
 		g_customCursorType = CustomCursorTypeCross;
-		g_selectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
+		g_selector.SelectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
 		g_canSnap = true;
 	}
 }
@@ -1313,7 +1317,7 @@ void MoveTool::Exiting()
 {
 	DeleteFantoms(false);
 	DeleteCopies();
-	g_selected.clear();
+	g_selector.Cancel();
 }
 
 

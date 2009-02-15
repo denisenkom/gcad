@@ -196,6 +196,20 @@ public:
 };
 
 
+class Selector
+{
+public:
+	Selector() : m_lassoOn(false), m_lassoDrawn(false) {}
+	void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	void Cancel();
+	Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> SelectHandler;
+private:
+	bool m_lassoOn;
+	Point<double> m_lassoPt1, m_lassoPt2;
+	bool m_lassoDrawn;
+};
+
+
 class Tool
 {
 public:
@@ -212,10 +226,10 @@ private:
 };
 
 
-class SelectorTool : public Tool
+class DefaultTool : public Tool
 {
 public:
-	SelectorTool() : m_state(Selecting) {}
+	DefaultTool() : m_state(Selecting) {}
 	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
 	void DrawManipulators(HDC hdc);
@@ -389,7 +403,8 @@ private:
 };
 
 
-extern SelectorTool g_selectTool;
+extern Selector g_selector;
+extern DefaultTool g_defaultTool;
 extern PanTool g_panTool;
 extern ZoomTool g_zoomTool;
 extern DrawLinesTool g_drawLinesTool;
@@ -398,7 +413,7 @@ extern MoveTool g_moveTool;
 extern Tool * g_curTool;
 
 const ToolInfo TOOLS[] = {
-	{ID_VIEW_SELECT, g_selectTool},
+	{ID_VIEW_SELECT, g_defaultTool},
 	{ID_VIEW_PAN, g_panTool},
 	{ID_VIEW_ZOOM, g_zoomTool},
 	{ID_DRAW_LINES, g_drawLinesTool},
@@ -460,7 +475,6 @@ extern PointType g_objSnapType;
 extern Point<int> g_objSnapPos;
 extern bool g_canSnap;
 
-extern Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> g_selectHandler;
 
 Point<int> WorldToScreen(float x, float y);
 

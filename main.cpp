@@ -93,7 +93,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 		si.nPos = g_hscrollPos;
 		SetScrollInfo(hwnd, SB_HORZ, &si, true);}
 
-		g_selectTool.Start(list<CadObject*>());
+		g_defaultTool.Start(list<CadObject*>());
 		}
 		return 0;
 	case WM_DESTROY:
@@ -111,7 +111,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 			assert(0);
 		if (!DeleteObject(g_selectedManipHBrush))
 			assert(0);
-		g_selectHandler = Loki::Functor<void, LOKI_TYPELIST_2(CadObject *, bool)>();
+		g_selector.SelectHandler = Loki::Functor<void, LOKI_TYPELIST_2(CadObject *, bool)>();
 		return 0;
 	case WM_PAINT:
 		{
@@ -156,7 +156,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 			(*i)->Draw(hdc, IsSelected(*i));
 		}
 
-		g_selectTool.DrawManipulators(hdc);
+		g_defaultTool.DrawManipulators(hdc);
 
 		if (g_cursorDrawn)
 			DrawCursor(hdc);
@@ -583,9 +583,9 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 		{
 		case VK_ESCAPE:
 			g_curTool->Cancel();
-			if (g_curTool != &g_selectTool)
+			if (g_curTool != &g_defaultTool)
 			{
-				g_curTool = &g_selectTool;
+				g_curTool = &g_defaultTool;
 				g_curTool->Start(list<CadObject *>());
 			}
 			InvalidateRect(hwnd, 0, true);
