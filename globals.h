@@ -9,6 +9,7 @@
 #define GLOBALS_H_
 
 
+#include "exmath.h"
 #include "resource.h"
 #include <windows.h> // for HDC
 #include <list>
@@ -23,45 +24,6 @@
 #ifndef GET_KEYSTATE_WPARAM
 #define GET_KEYSTATE_WPARAM(x) LOWORD(x)
 #endif
-
-
-template <typename T>
-struct Point
-{
-	T X;
-	T Y;
-
-	Point() {}
-	Point(const T & x, const T & y) : X(x), Y(y) {}
-
-	template <typename T2>
-	Point(const Point<T2> & left) : X(left.X), Y(left.Y) {}
-
-	Point<T> & operator = (const Point<T> & left)
-	{
-		X = left.X;
-		Y = left.Y;
-		return *this;
-	}
-
-	template <typename T2>
-	Point<T> & operator = (const Point<T2> & left)
-	{
-		X = left.X;
-		Y = left.Y;
-		return *this;
-	}
-
-	bool operator==(const Point<T> & rhs) const
-	{
-		return X == rhs.X && Y == rhs.Y;
-	}
-
-	bool operator!=(const Point<T> & rhs) const
-	{
-		return !(*this == rhs);
-	}
-};
 
 
 class WindowsError
@@ -100,7 +62,9 @@ class CadObject
 public:
 	virtual ~CadObject() {}
 	virtual void Draw(HDC hdc, bool selected) const = 0;
+	bool IntersectsRect(const Rect<double> & rect) { return IntersectsRect(rect.Pt1.X, rect.Pt1.Y, rect.Pt2.X, rect.Pt2.Y); }
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const = 0;
+	virtual Rect<double> GetBoundingRect() const = 0; // returns normalized bounding rectangle
 	virtual std::vector<Point<double> > GetManipulators() const = 0;
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const = 0;
 	virtual class Fantom * CreateFantom(int param) = 0;
@@ -138,6 +102,7 @@ public:
 
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
+	virtual Rect<double> GetBoundingRect() const { return Rect<double>(Point1, Point2).Normalized(); }
 	virtual std::vector<Point<double> > GetManipulators() const;
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual class Fantom * CreateFantom(int param);
@@ -175,6 +140,7 @@ public:
 
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
+	virtual Rect<double> GetBoundingRect() const;
 	virtual std::vector<Point<double> > GetManipulators() const;
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual class Fantom * CreateFantom(int param);

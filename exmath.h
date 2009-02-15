@@ -1,5 +1,82 @@
+#ifndef EXMATH_H_INCLUDED
+#define EXMATH_H_INCLUDED
+
+
 #include <cmath>
 #include <cassert>
+
+
+template <typename T>
+struct Point
+{
+	T X;
+	T Y;
+
+	Point() {}
+	Point(const T & x, const T & y) : X(x), Y(y) {}
+
+	template <typename T2>
+	Point(const Point<T2> & left) : X(left.X), Y(left.Y) {}
+
+	Point<T> & operator = (const Point<T> & left)
+	{
+		X = left.X;
+		Y = left.Y;
+		return *this;
+	}
+
+	template <typename T2>
+	Point<T> & operator = (const Point<T2> & left)
+	{
+		X = left.X;
+		Y = left.Y;
+		return *this;
+	}
+
+	bool operator==(const Point<T> & rhs) const
+	{
+		return X == rhs.X && Y == rhs.Y;
+	}
+
+	bool operator!=(const Point<T> & rhs) const
+	{
+		return !(*this == rhs);
+	}
+};
+
+
+template<typename T>
+struct Rect
+{
+	Rect() {}
+
+	Rect(Point<T> pt1, Point<T> pt2)
+		: Pt1(pt1), Pt2(pt2)
+	{
+	}
+
+	Rect(T x1, T y1, T x2, T y2)
+		: Pt1(x1, y1), Pt2(x2, y2)
+	{
+	}
+
+	Rect<T> Normalized() const
+	{
+		return Rect<T>(min(Pt1.X, Pt2.X), min(Pt1.Y, Pt2.Y),
+				max(Pt1.X, Pt2.X), max(Pt1.Y, Pt2.Y));
+	}
+
+	Point<T> Pt1;
+	Point<T> Pt2;
+
+	// rectangles must be normalized
+	friend bool IsLeftContainsRight(const Rect<T> & left, const Rect<T> & right)
+	{
+		return left.Pt1.X <= right.Pt1.X && right.Pt2.X <= left.Pt2.X &&
+			left.Pt1.Y <= right.Pt1.Y && right.Pt2.Y <= left.Pt2.Y;
+	}
+};
+
 
 template<class scalar>
 inline scalar det3(scalar m[3][3])
@@ -57,14 +134,20 @@ bool LineIntersectsRect(scalar p1x, scalar p1y, scalar p2x, scalar p2y, scalar x
 
 
 template<typename scalar> // float or double
-inline bool PtInArc(scalar x, scalar y, scalar startAngle, scalar endAngle)
+inline bool AngInArc(scalar angle, scalar startAngle, scalar endAngle)
 {
-	assert(startAngle != endAngle);
-	scalar angle = atan2(y, x);
 	if (startAngle < endAngle)
 		return startAngle <= angle && angle <= endAngle;
 	else
 		return angle <= endAngle || startAngle <= angle;
+}
+
+
+template<typename scalar> // float or double
+inline bool PtInArc(scalar x, scalar y, scalar startAngle, scalar endAngle)
+{
+	assert(startAngle != endAngle);
+	return AngInArc(atan2(y, x), startAngle, endAngle);
 }
 
 
@@ -129,26 +212,47 @@ inline bool HorzLineIntersectArc(scalar y, scalar x1, scalar x2, scalar cx, scal
 
 
 template<typename scalar> // float or double
+inline Rect<scalar> ArcsBoundingRect(scalar cx, scalar cy, scalar r, scalar p1x, scalar p1y, scalar p2x, scalar p2y, bool ccw)
+{
+	Rect<scalar> result = Rect<double>(p1x, p1y, p2x, p2y).Normalized();
+	scalar startAngle = atan2(p1y - cy, p1x - cx);
+	scalar endAngle = atan2(p2y - cy, p2x - cx);
+	if (!ccw)
+		swap(startAngle, endAngle);
+	if (AngInArc(0.0, startAngle, endAngle))
+		result.Pt2.X = cx + r;
+	if (AngInArc(M_PI / 2, startAngle, endAngle))
+		result.Pt2.Y = cy + r;
+	if (AngInArc(M_PI, startAngle, endAngle))
+		result.Pt1.X = cx - r;
+	if (AngInArc(-M_PI / 2, startAngle, endAngle))
+		result.Pt1.Y = cy - r;
+	return result;
+}
+
+
+template<typename scalar> // float or double
 inline bool ArcIntersectsRect(scalar cx, scalar cy, scalar r, scalar p1x, scalar p1y, scalar p2x, scalar p2y, bool ccw, scalar x1, scalar y1, scalar x2, scalar y2)
 {
 	assert(x1 <= x2);
 	assert(y1 <= y2);
 
-	// checking is full circle fits in rectangle
-	if (x1 <= cx - r && cx + r <= x2 && y1 <= cy - r && cy + r <= y2)
+	// checking is arc fits in rectangle
+	Rect<scalar> brect = ArcsBoundingRect(cx, cy, r, p1x, p1y, p2x, p2y, ccw);
+	if (IsLeftContainsRight(Rect<scalar>(x1, y1, x2, y2), brect))
 		return true;
 
-	// rectangle fully on left from circle
-	if (cx + r < x1)
+	// rectangle fully on left from arc
+	if (brect.Pt2.X < x1)
 		return false;
-	// rectangle fully on right from circle
-	if (x2 < cx - r)
+	// rectangle fully on right from arc
+	if (x2 < brect.Pt1.X)
 		return false;
-	// rectangle fully above circle
-	if (cy + r < y1)
+	// rectangle fully above arc
+	if (brect.Pt2.Y < y1)
 		return false;
-	// rectangle fully below circle
-	if (y2 < cx - r)
+	// rectangle fully below arc
+	if (y2 < brect.Pt1.Y)
 		return false;
 
 	// determining angles of arc end points
@@ -197,3 +301,6 @@ inline void CalcMiddlePointOfArc(scalar cx, scalar cy, scalar r, scalar p1x, sca
 	pmx = cos(angle1 + delta/2)*r + cx;
 	pmy = sin(angle1 + delta/2)*r + cy;
 }
+
+
+#endif // EXMATH_H_INCLUDED

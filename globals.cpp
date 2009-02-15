@@ -240,6 +240,12 @@ bool CadArc::IntersectsRect(double x1, double y1, double x2, double y2) const
 }
 
 
+Rect<double> CadArc::GetBoundingRect() const
+{
+	return ArcsBoundingRect(Center.X, Center.Y, Radius, Start.X, Start.Y, End.X, End.Y, Ccw);
+}
+
+
 vector<Point<double> > CadArc::GetManipulators() const
 {
 	Point<double> middle;
@@ -510,27 +516,98 @@ bool IsSelected(const CadObject * obj)
 }
 
 
+static bool s_lassoOn = false;
+static Point<double> s_lassoPt1;
+static Point<double> s_lassoPt2;
+static bool s_lassoDrawn = false;
+
+
+void MyRectangle(HDC hdc, Point<int> pt1, Point<int> pt2)
+{
+	int left = min(pt1.X, pt2.X);
+	int top = min(pt1.Y, pt2.Y);
+	int right = max(pt1.X, pt2.X) + 1;
+	int bottom = max(pt1.Y, pt2.Y) + 1;
+	if (!Rectangle(hdc, left, top, right, bottom))
+		assert(0);
+}
+
+
 static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
 	{
+	case WM_LBUTTONDOWN:
+		s_lassoPt2 = s_lassoPt1 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
+		s_lassoOn = true;
+		break;
+	case WM_MOUSEMOVE:
+		if (s_lassoOn)
+		{
+			ClientDC hdc(hwnd);
+			SelectObject(hdc, GetStockObject(NULL_BRUSH));
+			if (s_lassoPt2.X < s_lassoPt1.X)
+				SelectObject(hdc, g_selectedLineHPen);
+			else
+				SelectObject(hdc, g_lineHPen);
+			SetROP2(hdc, R2_XORPEN);
+			Point<int> scnPt1 = WorldToScreen(s_lassoPt1);
+			Point<int> scnPt2 = WorldToScreen(s_lassoPt2);
+			if (s_lassoDrawn)
+				MyRectangle(hdc, scnPt1, scnPt2);
+			s_lassoPt2 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
+			scnPt2 = g_cursorScn;
+			if (s_lassoPt2.X < s_lassoPt1.X)
+				SelectObject(hdc, g_selectedLineHPen);
+			else
+				SelectObject(hdc, g_lineHPen);
+			MyRectangle(hdc, scnPt1, scnPt2);
+			s_lassoDrawn = true;
+		}
+		break;
 	case WM_LBUTTONUP:
-		Point<double> leftbot = ScreenToWorld(g_cursorScn.X - 3, g_cursorScn.Y + 3);
-		Point<double> righttop = ScreenToWorld(g_cursorScn.X + 3, g_cursorScn.Y - 3);
+		Rect<double> testRect;
+		bool multiselect;
+		bool intersect;
+		if (s_lassoOn && s_lassoPt1 != s_lassoPt2)
+		{
+			testRect = Rect<double>(s_lassoPt1, s_lassoPt2).Normalized();
+			multiselect = true;
+			intersect = s_lassoPt1.X > s_lassoPt2.X;
+		}
+		else
+		{
+			testRect.Pt1 = ScreenToWorld(g_cursorScn.X - 3, g_cursorScn.Y + 3);
+			testRect.Pt2 = ScreenToWorld(g_cursorScn.X + 3, g_cursorScn.Y - 3);
+			multiselect = false;
+			intersect = true;
+		}
+		s_lassoOn = false;
+		if (s_lassoDrawn)
+		{
+			s_lassoDrawn = false;
+			InvalidateRect(hwnd, 0, true);
+		}
 		if (GetKeyState(VK_SHIFT) & 0x8000)
 		{
 			// removing selection
-			for (list<CadObject *>::reverse_iterator i = g_selected.rbegin();
-				i != g_selected.rend(); i++)
+			for (list<CadObject *>::iterator i = g_selected.end();
+				i != g_selected.begin();)
 			{
-				if ((*i)->IntersectsRect(leftbot.X, leftbot.Y, righttop.X, righttop.Y))
+				i--;
+				bool good;
+				if (intersect)
+					good = (*i)->IntersectsRect(testRect);
+				else
+					good = IsLeftContainsRight(testRect, (*i)->GetBoundingRect());
+				if (good)
 				{
 					if (g_selectHandler)
 						g_selectHandler(*i, false);
-					g_selected.erase((++i).base());
+					i = g_selected.erase(i);
 					InvalidateRect(hwnd, 0, true);
-					UpdateWindow(hwnd);
-					break;
+					if (!multiselect)
+						break;
 				}
 			}
 		}
@@ -542,14 +619,19 @@ static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 			{
 				if (IsSelected(*i))
 					continue;
-				if ((*i)->IntersectsRect(leftbot.X, leftbot.Y, righttop.X, righttop.Y))
+				bool good;
+				if (intersect)
+					good = (*i)->IntersectsRect(testRect);
+				else
+					good = IsLeftContainsRight(testRect, (*i)->GetBoundingRect());
+				if (good)
 				{
 					g_selected.push_back(*i);
 					if (g_selectHandler != 0)
 						g_selectHandler(*i, true);
 					InvalidateRect(hwnd, 0, true);
-					UpdateWindow(hwnd);
-					break;
+					if (!multiselect)
+						break;
 				}
 			}
 		}
@@ -560,12 +642,15 @@ static void SelectProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 
 void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
-	switch (msg)
+	switch (m_state)
 	{
-	case WM_LBUTTONUP:
-		switch (m_state)
+	case Selecting:
+		switch (msg)
 		{
-		case Selecting:
+		case WM_LBUTTONDOWN:
+			SelectProcessInput(hwnd, msg, wparam, lparam);
+			break;
+		case WM_LBUTTONUP:
 			do
 			{
 				// begin moving manipulator if clicked in it
@@ -621,7 +706,50 @@ void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			}
 			while (false);
 			break;
-		case MovingManip:
+		case WM_MOUSEMOVE:
+			SelectProcessInput(hwnd, msg, wparam, lparam);
+			break;
+		case WM_KEYDOWN:
+			switch (wparam)
+			{
+			case VK_DELETE:
+				do
+				{
+					bool needRefresh = false;
+					while (g_selected.size() != 0)
+					{
+						needRefresh = true;
+						bool found = false;
+						list<CadObject *>::iterator i = g_selected.begin();
+						for (list<CadObject *>::iterator j = g_doc.Objects.begin();
+							j != g_doc.Objects.end(); j++)
+						{
+							if (*i == *j)
+							{
+								CadObject * obj = *i;
+								g_selected.erase(i);
+								g_doc.Objects.erase(j);
+								RemoveManipulators(obj);
+								delete obj;
+								found = true;
+								break;
+							}
+						}
+						assert(found);
+					}
+					if (needRefresh)
+						InvalidateRect(hwnd, 0, true);
+				}
+				while (false);
+				break;
+			}
+			break;
+		}
+		break;
+	case MovingManip:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
 			list<Fantom*>::iterator ifan = g_fantoms.begin();
 			list<CadObject*>::iterator i = m_manipulated.begin();
 			for (; i != m_manipulated.end(); i++, ifan++)
@@ -638,46 +766,6 @@ void SelectorTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			m_state = Selecting;
 			InvalidateRect(hwnd, 0, true);
 			UpdateWindow(hwnd);
-			break;
-		}
-		break;
-	case WM_KEYDOWN:
-		switch (wparam)
-		{
-		case VK_DELETE:
-			switch (m_state)
-			{
-			case Selecting:
-			{
-				bool needRefresh = false;
-				while (g_selected.size() != 0)
-				{
-					needRefresh = true;
-					bool found = false;
-					list<CadObject *>::iterator i = g_selected.begin();
-					for (list<CadObject *>::iterator j = g_doc.Objects.begin();
-						j != g_doc.Objects.end(); j++)
-					{
-						if (*i == *j)
-						{
-							CadObject * obj = *i;
-							g_selected.erase(i);
-							g_doc.Objects.erase(j);
-							RemoveManipulators(obj);
-							delete obj;
-							found = true;
-							break;
-						}
-					}
-					assert(found);
-				}
-				if (needRefresh)
-					InvalidateRect(hwnd, 0, true);
-			}
-				break;
-			case MovingManip:
-				break;
-			}
 			break;
 		}
 		break;
