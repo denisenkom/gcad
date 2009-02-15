@@ -126,6 +126,60 @@ inline scalar det3(scalar m[3][3])
 }
 
 
+template<class scalar>
+struct CircleArc
+{
+	Point<scalar> Center;
+	scalar Radius;
+	scalar StartAngle;
+	scalar EndAngle;
+	bool Ccw;
+	bool Straight;
+
+	friend CircleArc ArcFrom3Pt(const Point<scalar> & p1, const Point<scalar> & p2, const Point<scalar> & p3)
+	{
+		CircleArc result;
+		double sx1sy1 = p1.X*p1.X + p1.Y*p1.Y;
+		double sx2sy2 = p2.X*p2.X + p2.Y*p2.Y;
+		double sx3sy3 = p3.X*p3.X + p3.Y*p3.Y;
+		double m11[][3] = {
+				{p1.X, p1.Y, 1},
+				{p2.X, p2.Y, 1},
+				{p3.X, p3.Y, 1}};
+		double m12[][3] = {
+				{sx1sy1, p1.Y, 1},
+				{sx2sy2, p2.Y, 1},
+				{sx3sy3, p3.Y, 1}};
+		double m13[][3] = {
+				{sx1sy1, p1.X, 1},
+				{sx2sy2, p2.X, 1},
+				{sx3sy3, p3.X, 1}};
+		double m14[][3] = {
+				{sx1sy1, p1.X, p1.Y},
+				{sx2sy2, p2.X, p2.Y},
+				{sx3sy3, p3.X, p3.Y}};
+		double dm11 = det3(m11);
+		if (dm11 == 0)
+		{
+			result.Straight = true;
+		}
+		else
+		{
+			double dm12 = det3(m12);
+			double dm13 = det3(m13);
+			double dm14 = det3(m14);
+			double cx = +.5f * dm12/dm11;
+			double cy = -.5f * dm13/dm11;
+			result.Center = Point<double>(cx, cy);
+			result.Radius = sqrt(cx*cx + cy*cy + dm14/dm11);
+			result.Ccw = dm11 > 0;
+			result.Straight = false;
+		}
+		return result;
+	}
+};
+
+
 template<typename scalar> // float or double
 bool LineIntersectsRect(scalar p1x, scalar p1y, scalar p2x, scalar p2y, scalar x1, scalar y1, scalar x2, scalar y2)
 {

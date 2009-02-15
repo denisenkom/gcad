@@ -155,6 +155,7 @@ public:
 	Point<double> End;
 	double Radius;
 	bool Ccw;
+	bool Straight;
 
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
@@ -309,7 +310,8 @@ public:
 	virtual void Start(const std::list<CadObject *> & selected);
 private:
 	bool m_selectingSecondPoint;
-	FantomLine * m_fantomLine; // not owned
+	std::auto_ptr<CadLine> m_fantomLine;
+	void RecalcFantomsHandler();
 };
 
 
@@ -344,8 +346,10 @@ private:
 		StateSelectingThirdPoint
 	};
 	State m_state;
-	Point<double> m_firstPoint;
-	FantomArc * m_fantomArc; // not owned
+	std::auto_ptr<CadLine> m_fantomLine;
+	Point<double> m_secondPoint;
+	std::auto_ptr<CadArc> m_fantomArc;
+	void RecalcFantomsHandler();
 };
 
 

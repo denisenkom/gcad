@@ -338,19 +338,30 @@ void CadArc::Draw(HDC hdc, bool selected) const
 		assert(0);
 	if (SetBkColor(hdc, RGB(0, 0, 0)) == CLR_INVALID)
 		assert(0);
-	Point<int> center = WorldToScreen(Center);
-	Point<int> start = WorldToScreen(Start);
-	Point<int> end = WorldToScreen(End);
-	int r = static_cast<int>(Radius * g_magification);
-	if (!Ccw)
+	if (Straight)
 	{
-		Point<int> temp = start;
-		start = end;
-		end = temp;
+		Point<int> startScn = WorldToScreen(Start);
+		Point<int> endScn = WorldToScreen(End);
+		MoveToEx(hdc, startScn.X, startScn.Y, 0);
+		LineTo(hdc, endScn.X, endScn.Y);
+		LineTo(hdc, endScn.X + 1, endScn.Y);
 	}
-	//MoveToEx(hdc, start.X, start.Y, 0);
-	Arc(hdc, center.X - r, center.Y - r, center.X + r + 1, center.Y + r + 1, start.X, start.Y, end.X, end.Y);
-	//LineTo(hdc, end.X + 1, end.Y);
+	else
+	{
+		Point<int> center = WorldToScreen(Center);
+		Point<int> start = WorldToScreen(Start);
+		Point<int> end = WorldToScreen(End);
+		int r = static_cast<int>(Radius * g_magification);
+		if (!Ccw)
+		{
+			Point<int> temp = start;
+			start = end;
+			end = temp;
+		}
+		//MoveToEx(hdc, start.X, start.Y, 0);
+		Arc(hdc, center.X - r, center.Y - r, center.X + r + 1, center.Y + r + 1, start.X, start.Y, end.X, end.Y);
+		//LineTo(hdc, end.X + 1, end.Y);
+	}
 }
 
 
@@ -436,42 +447,11 @@ void FantomArc::Recalc() const
 	Point<double> p1 = m_first = m_movingPtNo == 0 ? movingPt : m_first;
 	Point<double> p2 = m_movingPtNo == 1 ? movingPt : m_second;
 	Point<double> p3 = m_third = m_movingPtNo == 2 ? movingPt : m_third;
-	double sx1sy1 = p1.X*p1.X + p1.Y*p1.Y;
-	double sx2sy2 = p2.X*p2.X + p2.Y*p2.Y;
-	double sx3sy3 = p3.X*p3.X + p3.Y*p3.Y;
-	double m11[][3] = {
-			{p1.X, p1.Y, 1},
-			{p2.X, p2.Y, 1},
-			{p3.X, p3.Y, 1}};
-	double m12[][3] = {
-			{sx1sy1, p1.Y, 1},
-			{sx2sy2, p2.Y, 1},
-			{sx3sy3, p3.Y, 1}};
-	double m13[][3] = {
-			{sx1sy1, p1.X, 1},
-			{sx2sy2, p2.X, 1},
-			{sx3sy3, p3.X, 1}};
-	double m14[][3] = {
-			{sx1sy1, p1.X, p1.Y},
-			{sx2sy2, p2.X, p2.Y},
-			{sx3sy3, p3.X, p3.Y}};
-	double dm11 = det3(m11);
-	if (dm11 == 0)
-	{
-		m_straight = true;
-	}
-	else
-	{
-		double dm12 = det3(m12);
-		double dm13 = det3(m13);
-		double dm14 = det3(m14);
-		double cx = +.5f * dm12/dm11;
-		double cy = -.5f * dm13/dm11;
-		m_center = Point<double>(cx, cy);
-		m_radius = sqrt(cx*cx + cy*cy + dm14/dm11);
-		m_ccw = dm11 > 0;
-		m_straight = false;
-	}
+	CircleArc<double> arc = ArcFrom3Pt(p1, p2, p3);
+	m_straight = arc.Straight;
+	m_center = arc.Center;
+	m_radius = arc.Radius;
+	m_ccw = arc.Ccw;
 }
 
 
@@ -1161,43 +1141,28 @@ void DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPA
 	case WM_LBUTTONDOWN:
 		if (m_selectingSecondPoint)
 		{
-			try
-			{
-				ClientDC hdc(hwnd);
-				if (g_cursorDrawn)
-					DrawCursor(hdc);
-				g_fantomManager.DeleteFantoms(hdc);
-				if (g_objSnapDrawn)
-					DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
-				CadObject * line = m_fantomLine->CreateCad();
-				g_doc.Objects.push_back(line);
-				SetROP2(hdc, R2_COPYPEN);
-				line->Draw(hdc, false);
-				SetROP2(hdc, R2_XORPEN);
-				if (g_cursorDrawn)
-					DrawCursor(hdc);
-				if (g_objSnapDrawn)
-					DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
-			}
-			catch (WindowsError &)
-			{
-			}
+			g_fantomManager.DeleteFantoms(false);
+			g_doc.Objects.push_back(m_fantomLine->Clone());
 		}
 		else
 		{
 			m_selectingSecondPoint = true;
 		}
-		m_fantomLine = new FantomLine(g_cursorWrld);
-		g_fantomManager.AddFantom(m_fantomLine);
-		do
-		{
-			ClientDC hdc(hwnd);
-			m_fantomLine->Draw(hdc);
-		}
-		while (false);
+		m_fantomLine.reset(new CadLine());
+		m_fantomLine->Point1 = m_fantomLine->Point2 = g_cursorWrld;
+		g_fantomManager.AddFantom(m_fantomLine.get());
+		g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawLinesTool::RecalcFantomsHandler);
+		InvalidateRect(hwnd, 0, true);
 		break;
 	}
 }
+
+
+void DrawLinesTool::RecalcFantomsHandler()
+{
+	m_fantomLine->Point2 = g_cursorWrld;
+}
+
 
 
 void DrawLinesTool::Start(const std::list<CadObject *> & /*selected*/)
@@ -1265,56 +1230,32 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 {
 	switch (msg)
 	{
-	case WM_LBUTTONDOWN:
+	case WM_LBUTTONUP:
 		switch (m_state)
 		{
 		case StateSelectingFirstPoint:
-			m_firstPoint = g_cursorWrld;
-			FantomLine * fantomLine;
-			fantomLine = new FantomLine(g_cursorWrld);
-			g_fantomManager.AddFantom(fantomLine);
-			do
-			{
-				ClientDC hdc(hwnd);
-				SetROP2(hdc, R2_XORPEN);
-				fantomLine->Draw(hdc);
-			}
-			while (false);
+			m_fantomLine.reset(new CadLine());
+			m_fantomLine->Point1 = m_fantomLine->Point2 = g_cursorWrld;
+			g_fantomManager.AddFantom(m_fantomLine.get());
+			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawArcsTool::RecalcFantomsHandler);
 			m_state = StateSelectingSecondPoint;
+			InvalidateRect(hwnd, 0, true);
 			break;
 		case StateSelectingSecondPoint:
-			g_fantomManager.DeleteFantoms(true);
-			m_fantomArc = new FantomArc(m_firstPoint, g_cursorWrld);
-			g_fantomManager.AddFantom(m_fantomArc);
-			do
-			{
-				ClientDC hdc(hwnd);
-				m_fantomArc->Recalc();
-				SetROP2(hdc, R2_XORPEN);
-				m_fantomArc->Draw(hdc);
-			}
-			while (false);
+			g_fantomManager.DeleteFantoms(false);
+			m_fantomArc.reset(new CadArc());
+			m_fantomArc->Start = m_fantomLine->Point1;
+			m_fantomArc->End = m_secondPoint = m_fantomLine->Point2;
+			m_fantomArc->Straight = true;
+			m_fantomLine.reset(0);
+			g_fantomManager.AddFantom(m_fantomArc.get());
+			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawArcsTool::RecalcFantomsHandler);
 			m_state = StateSelectingThirdPoint;
+			InvalidateRect(hwnd, 0, true);
 			break;
 		case StateSelectingThirdPoint:
-		{
-			m_state = StateSelectingFirstPoint;
-			ClientDC hdc(hwnd);
-			if (g_cursorDrawn)
-				DrawCursor(hdc);
-			if (g_objSnapDrawn)
-				DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
-			CadObject * arc = m_fantomArc->CreateCad();
-			g_fantomManager.DeleteFantoms(hdc);
-			g_doc.Objects.push_back(arc);
-			SetROP2(hdc, R2_COPYPEN);
-			arc->Draw(hdc, false);
-			SetROP2(hdc, R2_XORPEN);
-			if (g_cursorDrawn)
-				DrawCursor(hdc);
-			if (g_objSnapDrawn)
-				DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
-		}
+			g_doc.Objects.push_back(m_fantomArc->Clone());
+			ExitTool();
 			break;
 		}
 		break;
@@ -1329,6 +1270,22 @@ void DrawArcsTool::Start(const std::list<CadObject *> & /*selected*/)
 	g_customCursorType = CustomCursorTypeCross;
 	m_state = StateSelectingFirstPoint;
 	g_canSnap = true;
+}
+
+
+void DrawArcsTool::RecalcFantomsHandler()
+{
+	if (m_fantomLine.get())
+		m_fantomLine->Point2 = g_cursorWrld;
+	if (m_fantomArc.get())
+	{
+		CircleArc<double> arc = ArcFrom3Pt(m_fantomArc->Start, m_secondPoint, g_cursorWrld);
+		m_fantomArc->Center = arc.Center;
+		m_fantomArc->End = g_cursorWrld;
+		m_fantomArc->Ccw = arc.Ccw;
+		m_fantomArc->Radius = arc.Radius;
+		m_fantomArc->Straight = arc.Straight;
+	}
 }
 
 
