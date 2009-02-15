@@ -2,8 +2,10 @@
 #define EXMATH_H_INCLUDED
 
 
+#include <algorithm>
 #include <cmath>
 #include <cassert>
+#include <utility>
 
 
 template <typename T>
@@ -33,6 +35,12 @@ struct Point
 		return *this;
 	}
 
+	Point<T> & operator += (const Point<T> & left)
+	{
+		*this = *this + left;
+		return *this;
+	}
+
 	bool operator==(const Point<T> & rhs) const
 	{
 		return X == rhs.X && Y == rhs.Y;
@@ -41,6 +49,21 @@ struct Point
 	bool operator!=(const Point<T> & rhs) const
 	{
 		return !(*this == rhs);
+	}
+
+	T Length() const
+	{
+		return sqrt(X * X + Y * Y);
+	}
+
+	friend Point<T> operator-(const Point<T> & lhs, const Point<T> & rhs)
+	{
+		return Point<T>(rhs.X - lhs.X, rhs.Y - lhs.Y);
+	}
+
+	friend Point<T> operator+(const Point<T> & lhs, const Point<T> & rhs)
+	{
+		return Point<T>(rhs.X + lhs.X, rhs.Y + lhs.Y);
 	}
 };
 
@@ -62,8 +85,8 @@ struct Rect
 
 	Rect<T> Normalized() const
 	{
-		return Rect<T>(min(Pt1.X, Pt2.X), min(Pt1.Y, Pt2.Y),
-				max(Pt1.X, Pt2.X), max(Pt1.Y, Pt2.Y));
+		return Rect<T>(std::min(Pt1.X, Pt2.X), std::min(Pt1.Y, Pt2.Y),
+				std::max(Pt1.X, Pt2.X), std::max(Pt1.Y, Pt2.Y));
 	}
 
 	Point<T> Pt1;
@@ -74,6 +97,23 @@ struct Rect
 	{
 		return left.Pt1.X <= right.Pt1.X && right.Pt2.X <= left.Pt2.X &&
 			left.Pt1.Y <= right.Pt1.Y && right.Pt2.Y <= left.Pt2.Y;
+	}
+
+	friend bool IsRectsIntersects(const Rect<T> & a, const Rect<T> & b)
+	{
+		// rectangle a fully on left from rectangle b
+		if (a.Pt2.X < b.Pt1.X)
+			return false;
+		// rectangle a fully on right from rectangle b
+		if (b.Pt2.X < a.Pt1.X)
+			return false;
+		// rectangle a fully above from rectangle b
+		if (a.Pt2.Y < b.Pt1.Y)
+			return false;
+		// rectangle a fully below from rectangle b
+		if (b.Pt2.Y < a.Pt1.Y)
+			return false;
+		return true;
 	}
 };
 
@@ -152,30 +192,45 @@ inline bool PtInArc(scalar x, scalar y, scalar startAngle, scalar endAngle)
 
 
 template<typename scalar> // float or double
-inline bool VertLineIntersectArc(scalar x, scalar y1, scalar y2, scalar cx, scalar cy, scalar r, scalar startAngle, scalar endAngle)
+inline std::pair<bool, scalar> VertLineIntersectsCircle(scalar x, Point<scalar> c, scalar r)
 {
 	// is strait line intersects circle
-	if (cx - r <= x && x <= cx + r)
+	if (c.X - r <= x && x <= c.X + r)
+		return make_pair(true, sqrt(r*r - (x - c.X)*(x - c.X)));
+	else
+		return make_pair(false, static_cast<scalar>(0.0));
+}
+
+
+template<typename scalar> // float or double
+inline std::pair<bool, scalar> HorzLineIntersectsCircle(scalar y, Point<scalar> c, scalar r)
+{
+	// is strait line intersects circle
+	if (c.Y - r <= y && y <= c.Y + r)
+		return std::make_pair(true, sqrt(r*r - (y - c.Y)*(y - c.Y)));
+	else
+		return std::make_pair(false, static_cast<scalar>(0.0));
+}
+
+
+template<typename scalar> // float or double
+inline bool VertLineIntersectArc(scalar x, scalar y1, scalar y2, scalar cx, scalar cy, scalar r, scalar startAngle, scalar endAngle)
+{
+	std::pair<bool, double> res;
+	res = VertLineIntersectsCircle(x, Point<scalar>(cx, cy), r);
+	if (!res.first)
+		return false;
+	// is intersection inside line cut
+	if (y1 <= cy + res.second && cy + res.second <= y2)
 	{
-		scalar root = sqrt(r*r - (x - cx)*(x - cx));
-		scalar inty = cy + root;
-		// is intersection inside line cut
-		if (y1 <= inty && inty <= y2)
-		{
-			if (PtInArc(x - cx, root, startAngle, endAngle))
-				return true;
-		}
-		// have 2nd root
-		if (root != 0)
-		{
-			scalar inty = cy - root;
-			// is intersection inside line cut
-			if (y1 <= inty && inty <= y2)
-			{
-				if (PtInArc(x - cx, -root, startAngle, endAngle))
-					return true;
-			}
-		}
+		if (PtInArc(x - cx, res.second, startAngle, endAngle))
+			return true;
+	}
+	// have 2nd root and intersection inside line cut
+	if (res.second != 0 && y1 <= cy - res.second && cy - res.second <= y2)
+	{
+		if (PtInArc(x - cx, -res.second, startAngle, endAngle))
+			return true;
 	}
 	return false;
 }
@@ -237,23 +292,13 @@ inline bool ArcIntersectsRect(scalar cx, scalar cy, scalar r, scalar p1x, scalar
 	assert(x1 <= x2);
 	assert(y1 <= y2);
 
-	// checking is arc fits in rectangle
 	Rect<scalar> brect = ArcsBoundingRect(cx, cy, r, p1x, p1y, p2x, p2y, ccw);
+	if (!IsRectsIntersects(brect, Rect<scalar>(x1, y1, x2, y2)))
+		return false;
+
+	// checking is arc fits in rectangle
 	if (IsLeftContainsRight(Rect<scalar>(x1, y1, x2, y2), brect))
 		return true;
-
-	// rectangle fully on left from arc
-	if (brect.Pt2.X < x1)
-		return false;
-	// rectangle fully on right from arc
-	if (x2 < brect.Pt1.X)
-		return false;
-	// rectangle fully above arc
-	if (brect.Pt2.Y < y1)
-		return false;
-	// rectangle fully below arc
-	if (y2 < brect.Pt1.Y)
-		return false;
 
 	// determining angles of arc end points
 	scalar angle1 = atan2(p1y - cy, p1x - cx);

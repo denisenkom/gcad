@@ -112,6 +112,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 		if (!DeleteObject(g_selectedManipHBrush))
 			assert(0);
 		g_selector.SelectHandler = Loki::Functor<void, LOKI_TYPELIST_2(CadObject *, bool)>();
+		g_fantomManager.RecalcFantomsHandler = Loki::Functor<void>();
 		return 0;
 	case WM_PAINT:
 		{
@@ -160,7 +161,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 
 		if (g_cursorDrawn)
 			DrawCursor(hdc);
-		DrawFantoms(hdc);
+		g_fantomManager.DrawFantoms(hdc);
 		g_objSnapDrawn = false;
 		EndPaint(hwnd, &paintStruct);
 		}
@@ -323,7 +324,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 				assert(0);
 			Zoom(g_magification, g_magification * (GET_WHEEL_DELTA_WPARAM(wparam) * 0.2f / WHEEL_DELTA),
 				g_hscrollPos, g_vscrollPos, pt.x, pt.y);
-			RecalcFantoms();
+			g_fantomManager.RecalcFantoms();
 		}
 		else
 		{
@@ -339,7 +340,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 						ClientDC hdc(hwnd);
 						if (g_cursorDrawn)
 							DrawCursor(hdc);
-						DrawFantoms(hdc);
+						g_fantomManager.DrawFantoms(hdc);
 					}
 					catch (WindowsError &)
 					{
@@ -358,8 +359,8 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 						ClientDC hdc(hwnd);
 						if (g_cursorDrawn)
 							DrawCursor(hdc);
-						RecalcFantoms();
-						DrawFantoms(hdc);
+						g_fantomManager.RecalcFantoms();
+						g_fantomManager.DrawFantoms(hdc);
 					}
 					catch (WindowsError &)
 					{
@@ -381,7 +382,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 					ClientDC hdc(hwnd);
 					if (g_cursorDrawn)
 						DrawCursor(hdc);
-					DrawFantoms(hdc);
+					g_fantomManager.DrawFantoms(hdc);
 				}
 				catch (WindowsError &)
 				{
@@ -400,8 +401,8 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 					ClientDC hdc(hwnd);
 					if (g_cursorDrawn)
 						DrawCursor(hdc);
-					RecalcFantoms();
-					DrawFantoms(hdc);
+					g_fantomManager.RecalcFantoms();
+					g_fantomManager.DrawFantoms(hdc);
 				}
 				catch (WindowsError &)
 				{
@@ -443,7 +444,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 					SetROP2(hdc, R2_XORPEN);
 					if (g_cursorDrawn)
 						DrawCursorRaw(hdc, g_cursorScn.X, g_cursorScn.Y);
-					DrawFantoms(hdc);
+					g_fantomManager.DrawFantoms(hdc);
 					g_cursorScn.X = GET_X_LPARAM(lparam);
 					g_cursorScn.Y = GET_Y_LPARAM(lparam);
 					g_cursorWrld = ScreenToWorld(g_cursorScn);
@@ -535,13 +536,20 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 						}
 					}
 					DrawCursorRaw(hdc, g_cursorScn.X, g_cursorScn.Y);
-					RecalcFantoms();
-					DrawFantoms(hdc);
+					g_fantomManager.RecalcFantoms();
+					g_fantomManager.DrawFantoms(hdc);
 					g_cursorDrawn = true;
 				}
 				catch (WindowsError &)
 				{
 				}
+			}
+			{
+			wchar_t buffer[32];
+			int len = swprintf(buffer, L"%#.4f, %#.4f", g_cursorWrld.X, g_cursorWrld.Y);
+			assert(len > 0);
+			assert(static_cast<size_t>(len) < sizeof(buffer)/sizeof(buffer[0]) - 1);
+			SetWindowTextW(g_statusBar, buffer);
 			}
 			break;
 		case CursorTypeSystem:
@@ -582,6 +590,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 		switch (wparam)
 		{
 		case VK_ESCAPE:
+			g_fantomManager.DeleteFantoms(false);
 			g_curTool->Cancel();
 			if (g_curTool != &g_defaultTool)
 			{
@@ -756,7 +765,8 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			SendMessageW(g_htoolbarDraw, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
 			const TBBUTTON buttons[] = {
 				{0, ID_DRAW_LINES, TBSTATE_ENABLED, 0, 0, 0 },
-				{1, ID_DRAW_ARCS, TBSTATE_ENABLED, 0, 0, 0 }};
+				{1, ID_DRAW_ARCS, TBSTATE_ENABLED, 0, 0, 0 },
+				{2, ID_DRAW_CIRCLE, TBSTATE_ENABLED, 0, 0, 0 }};
 			if (!SendMessageW(g_htoolbarDraw, TB_ADDBUTTONS, sizeof(buttons) / sizeof(buttons[0]), reinterpret_cast<LPARAM>(buttons)))
 				return -1;
 			long buttonSize = SendMessageW(g_htoolbarDraw, TB_GETBUTTONSIZE, 0, 0);
@@ -1044,6 +1054,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		case ID_VIEW_PAN:
 		case ID_VIEW_ZOOM:
 		case ID_DRAW_LINES:
+		case ID_DRAW_CIRCLE:
 		case ID_DRAW_ARCS:
 		case ID_MODIFY_MOVE:
 			SelectTool(LOWORD(wparam));

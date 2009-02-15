@@ -53,11 +53,12 @@ DefaultTool g_defaultTool;
 PanTool g_panTool;
 ZoomTool g_zoomTool;
 DrawLinesTool g_drawLinesTool;
+DrawCircleTool g_drawCircleTool;
 DrawArcsTool g_drawArcsTool;
 MoveTool g_moveTool;
 Tool * g_curTool = &g_defaultTool;
 
-list<Fantom *> g_fantoms;
+FantomManager g_fantomManager;
 
 bool g_canSnap = false;
 
@@ -209,6 +210,124 @@ void FantomLine::AssignToCad(CadLine * to) const
 	Point<double> movingPt = g_cursorWrld;
 	to->Point1 = m_movingPtNo == 0 ? movingPt : m_fixedPt;
 	to->Point2 = m_movingPtNo == 1 ? movingPt : m_fixedPt;
+}
+
+
+void CadCircle::Draw(HDC hdc, bool selected) const
+{
+	HPEN hpen = selected ? g_selectedLineHPen : g_lineHPen;
+	if (SelectObject(hdc, hpen) == NULL)
+		assert(0);
+	if (SetBkColor(hdc, RGB(0, 0, 0)) == CLR_INVALID)
+		assert(0);
+	Point<int> center = WorldToScreen(Center);
+	int r = static_cast<int>(Radius * g_magification);
+	if (!Arc(hdc, center.X - r, center.Y - r, center.X + r + 1, center.Y + r + 1, 0, 0, 0, 0))
+		assert(0);
+}
+
+
+bool CadCircle::IntersectsRect(double x1, double y1, double x2, double y2) const
+{
+	Rect<double> brect = GetBoundingRect();
+	if (!IsRectsIntersects(Rect<double>(x1, y1, x2, y2), brect))
+		return false;
+	if (IsLeftContainsRight(Rect<double>(x1, y1, x2, y2), brect))
+		return true;
+	pair<bool, double> res;
+	res = VertLineIntersectsCircle(x1, Center, Radius);
+	if (res.first)
+	{
+		if (y1 <= Center.Y + res.second && Center.Y + res.second <= y2)
+			return true;
+		else if (res.second != 0 && y1 <= Center.Y - res.second && Center.Y - res.second <= y2)
+			return true;
+	}
+	res = VertLineIntersectsCircle(x2, Center, Radius);
+	if (res.first)
+	{
+		if (y1 <= Center.Y + res.second && Center.Y + res.second <= y2)
+			return true;
+		else if (res.second != 0 && y1 <= Center.Y - res.second && Center.Y - res.second <= y2)
+			return true;
+	}
+	res = HorzLineIntersectsCircle(y1, Center, Radius);
+	if (res.first)
+	{
+		if (x1 <= Center.X + res.second && Center.X + res.second <= x2)
+			return true;
+		else if (res.second != 0 && x1 <= Center.X - res.second && Center.X - res.second <= x2)
+			return true;
+	}
+	res = HorzLineIntersectsCircle(y2, Center, Radius);
+	if (res.first)
+	{
+		if (x1 <= Center.X + res.second && Center.X + res.second <= x2)
+			return true;
+		else if (res.second != 0 && x1 <= Center.X - res.second && Center.X - res.second <= x2)
+			return true;
+	}
+	return false;
+}
+
+
+Rect<double> CadCircle::GetBoundingRect() const
+{
+	Point<double> rad(Radius, Radius);
+	return Rect<double>(Center - rad, Center + rad);
+}
+
+
+vector<Point<double> > CadCircle::GetManipulators() const
+{
+	Point<double> manips[] = {
+			Point<double>(Center.X + Radius, Center.Y),
+			Point<double>(Center.X, Center.Y + Radius),
+			Point<double>(Center.X - Radius, Center.Y),
+			Point<double>(Center.X, Center.Y - Radius),
+			Point<double>(Center.X, Center.Y),
+	};
+	return vector<Point<double> >(manips, manips + sizeof(manips)/sizeof(manips[0]));
+}
+
+
+std::vector<std::pair<Point<double>, PointType> > CadCircle::GetPoints() const
+{
+	pair<Point<double>, PointType> points[] = {
+			pair<Point<double>, PointType>(Point<double>(Center.X + Radius, Center.Y), PointTypeQuadrant),
+			pair<Point<double>, PointType>(Point<double>(Center.X, Center.Y + Radius), PointTypeQuadrant),
+			pair<Point<double>, PointType>(Point<double>(Center.X - Radius, Center.Y), PointTypeQuadrant),
+			pair<Point<double>, PointType>(Point<double>(Center.X, Center.Y - Radius), PointTypeQuadrant),
+			pair<Point<double>, PointType>(Point<double>(Center.X, Center.Y), PointTypeCenter),
+	};
+	return vector<pair<Point<double>, PointType > >(points, points + sizeof(points)/sizeof(points[0]));
+}
+
+
+class Fantom * CadCircle::CreateFantom(int param)
+{
+	assert(0);
+	return 0;
+}
+
+
+void CadCircle::Move(Point<double> displacement)
+{
+	Center += displacement;
+}
+
+
+CadCircle * CadCircle::Clone()
+{
+	return new CadCircle(*this);
+}
+
+
+void CadCircle::Assign(CadObject * rhs)
+{
+	CadCircle * rhsCircle = dynamic_cast<CadCircle *>(rhs);
+	assert(rhsCircle != 0);
+	*this = *rhsCircle;
 }
 
 
@@ -504,6 +623,18 @@ void SelectTool(int toolId)
 }
 
 
+void ExitTool()
+{
+	g_fantomManager.DeleteFantoms(false);
+	g_fantomManager.RecalcFantomsHandler = Functor<void>();
+	g_curTool->Exiting();
+	g_curTool = &g_defaultTool;
+	g_curTool->Start(list<CadObject*>());
+	InvalidateRect(g_hclientWindow, 0, true);
+	UpdateWindow(g_hclientWindow);
+}
+
+
 bool IsSelected(const CadObject * obj)
 {
 	for (std::list<CadObject *>::const_iterator i = g_selected.begin();
@@ -694,11 +825,11 @@ void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 					for (list<pair<CadObject*, int> >::iterator i = m_selManip->Links.begin();
 						i != m_selManip->Links.end(); i++)
 					{
-						g_fantoms.push_back(i->first->CreateFantom(i->second));
+						g_fantomManager.AddFantom(i->first->CreateFantom(i->second));
 						m_manipulated.push_back(i->first);
 					}
-					g_fantoms.push_back(new FantomLine(m_selManip->Position));
-					DrawFantoms(hdc);
+					g_fantomManager.AddFantom(new FantomLine(m_selManip->Position));
+					g_fantomManager.DrawFantoms(hdc);
 					g_customCursorType = CustomCursorTypeCross;
 					if (g_cursorDrawn)
 						DrawCursor(hdc);
@@ -757,7 +888,7 @@ void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 		switch (msg)
 		{
 		case WM_LBUTTONUP:
-			list<Fantom*>::iterator ifan = g_fantoms.begin();
+			list<Fantom*>::iterator ifan = g_fantomManager.g_fantoms.begin();
 			list<CadObject*>::iterator i = m_manipulated.begin();
 			for (; i != m_manipulated.end(); i++, ifan++)
 			{
@@ -768,7 +899,7 @@ void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 				AddManipulators(*pos);
 			}
 			m_manipulated.clear();
-			DeleteFantoms(false);
+			g_fantomManager.DeleteFantoms(false);
 			g_customCursorType = CustomCursorTypeSelect;
 			m_state = Selecting;
 			InvalidateRect(hwnd, 0, true);
@@ -801,7 +932,6 @@ void DefaultTool::Cancel()
 		break;
 	case MovingManip:
 		m_manipulated.clear();
-		DeleteFantoms(false);
 		g_customCursorType = CustomCursorTypeSelect;
 		m_state = Selecting;
 		g_canSnap = false;
@@ -816,7 +946,6 @@ void DefaultTool::Exiting()
 	{
 	case MovingManip:
 		m_manipulated.clear();
-		DeleteFantoms(false);
 		g_customCursorType = CustomCursorTypeSelect;
 		m_state = Selecting;
 		g_canSnap = false;
@@ -1037,7 +1166,7 @@ void DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPA
 				ClientDC hdc(hwnd);
 				if (g_cursorDrawn)
 					DrawCursor(hdc);
-				DeleteFantoms(hdc);
+				g_fantomManager.DeleteFantoms(hdc);
 				if (g_objSnapDrawn)
 					DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
 				CadObject * line = m_fantomLine->CreateCad();
@@ -1059,7 +1188,7 @@ void DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPA
 			m_selectingSecondPoint = true;
 		}
 		m_fantomLine = new FantomLine(g_cursorWrld);
-		g_fantoms.push_back(m_fantomLine);
+		g_fantomManager.AddFantom(m_fantomLine);
 		do
 		{
 			ClientDC hdc(hwnd);
@@ -1076,20 +1205,59 @@ void DrawLinesTool::Start(const std::list<CadObject *> & /*selected*/)
 	g_cursorType = CursorTypeManual;
 	g_cursorHandle = 0;
 	g_customCursorType = CustomCursorTypeCross;
+	m_selectingSecondPoint = false;
 	g_canSnap = true;
 }
 
 
-void DrawLinesTool::Cancel()
+void DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
-	Exiting();
+	switch (m_state)
+	{
+	case StateSelectingCenter:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			m_cadCircle.reset(new CadCircle());
+			m_cadCircle->Center = g_cursorWrld;
+			m_cadCircle->Radius = 0;
+			m_radiusLine.reset(new CadLine());
+			m_radiusLine->Point1 = m_radiusLine->Point2 = g_cursorWrld;
+			m_state = StateSelectingRadius;
+			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawCircleTool::RecalcFantomsHandler);
+			g_fantomManager.AddFantom(m_cadCircle.get());
+			g_fantomManager.AddFantom(m_radiusLine.get());
+			break;
+		}
+		break;
+	case StateSelectingRadius:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			m_radiusLine.reset(0);
+			g_doc.Objects.push_back(m_cadCircle.release());
+			ExitTool();
+			break;
+		}
+		break;
+	}
 }
 
 
-void DrawLinesTool::Exiting()
+void DrawCircleTool::RecalcFantomsHandler()
 {
-	DeleteFantoms(false);
-	m_selectingSecondPoint = false;
+	m_cadCircle->Radius = (g_cursorWrld - m_cadCircle->Center).Length();
+	m_radiusLine->Point2 = g_cursorWrld;
+}
+
+
+void DrawCircleTool::Start(const std::list<CadObject *> & selected)
+{
+	g_cursorType = CursorTypeManual;
+	g_cursorHandle = 0;
+	g_customCursorType = CustomCursorTypeCross;
+	m_state = StateSelectingCenter;
+	g_canSnap = true;
 }
 
 
@@ -1104,7 +1272,7 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			m_firstPoint = g_cursorWrld;
 			FantomLine * fantomLine;
 			fantomLine = new FantomLine(g_cursorWrld);
-			g_fantoms.push_back(fantomLine);
+			g_fantomManager.AddFantom(fantomLine);
 			do
 			{
 				ClientDC hdc(hwnd);
@@ -1115,9 +1283,9 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			m_state = StateSelectingSecondPoint;
 			break;
 		case StateSelectingSecondPoint:
-			DeleteFantoms(true);
+			g_fantomManager.DeleteFantoms(true);
 			m_fantomArc = new FantomArc(m_firstPoint, g_cursorWrld);
-			g_fantoms.push_back(m_fantomArc);
+			g_fantomManager.AddFantom(m_fantomArc);
 			do
 			{
 				ClientDC hdc(hwnd);
@@ -1137,7 +1305,7 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			if (g_objSnapDrawn)
 				DrawObjectSnap(hdc, g_objSnapPos, g_objSnapType);
 			CadObject * arc = m_fantomArc->CreateCad();
-			DeleteFantoms(hdc);
+			g_fantomManager.DeleteFantoms(hdc);
 			g_doc.Objects.push_back(arc);
 			SetROP2(hdc, R2_COPYPEN);
 			arc->Draw(hdc, false);
@@ -1161,18 +1329,6 @@ void DrawArcsTool::Start(const std::list<CadObject *> & /*selected*/)
 	g_customCursorType = CustomCursorTypeCross;
 	m_state = StateSelectingFirstPoint;
 	g_canSnap = true;
-}
-
-
-void DrawArcsTool::Cancel()
-{
-	Exiting();
-}
-
-
-void DrawArcsTool::Exiting()
-{
-	DeleteFantoms(false);
 }
 
 
@@ -1215,21 +1371,21 @@ void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 		{
 		case WM_LBUTTONUP:
 			m_basePoint = g_cursorWrld;
+			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &MoveTool::RecalcFantomsHandler);
+			m_fantomLine.reset(new CadLine());
+			m_fantomLine->Point1 = m_fantomLine->Point2 = m_basePoint;
+			g_fantomManager.AddFantom(m_fantomLine.get());
+			m_state = StateChoosingDestPoint;
+			DeleteCopies();
+			m_objects.resize(g_selected.size());
 			do
 			{
-				FantomLine * fantomLine = new FantomLine(m_basePoint);
-				g_fantoms.push_back(fantomLine);
-				ClientDC hdc(hwnd);
-				SetROP2(hdc, R2_XORPEN);
-				fantomLine->Draw(hdc);
-				m_state = StateChoosingDestPoint;
-				DeleteCopies();
-				m_objects.resize(g_selected.size());
 				int no = 0;
 				for (list<CadObject*>::iterator i = g_selected.begin();
 					i != g_selected.end(); i++, no++)
 				{
 					m_objects[no] = (*i)->Clone();
+					g_fantomManager.AddFantom(m_objects[no]);
 				}
 			}
 			while (false);
@@ -1239,23 +1395,6 @@ void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 	case StateChoosingDestPoint:
 		switch (msg)
 		{
-		case WM_MOUSEMOVE:
-			do
-			{
-				Point<double> displacement(g_cursorWrld.X - m_basePoint.X, g_cursorWrld.Y - m_basePoint.Y);
-				ClientDC hdc(hwnd);
-				SetROP2(hdc, R2_XORPEN);
-				for (vector<CadObject*>::iterator i = m_objects.begin();
-					i != m_objects.end(); i++)
-				{
-					(*i)->Draw(hdc, false);
-					(*i)->Move(displacement);
-					(*i)->Draw(hdc, false);
-				}
-				m_basePoint = g_cursorWrld;
-			}
-			while (false);
-			break;
 		case WM_LBUTTONUP:
 			do
 			{
@@ -1265,12 +1404,7 @@ void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 				{
 					(*i)->Assign(m_objects[no]);
 				}
-				DeleteCopies();
-				DeleteFantoms(false);
-				g_selected.clear();
-				SelectTool(ID_VIEW_SELECT);
-				InvalidateRect(hwnd, 0, true);
-				UpdateWindow(hwnd);
+				ExitTool();
 			}
 			while (false);
 			break;
@@ -1315,7 +1449,7 @@ void MoveTool::Cancel()
 
 void MoveTool::Exiting()
 {
-	DeleteFantoms(false);
+	m_fantomLine.reset(0);
 	DeleteCopies();
 	g_selector.Cancel();
 }
@@ -1332,6 +1466,17 @@ void MoveTool::DeleteCopies()
 }
 
 
+void MoveTool::RecalcFantomsHandler()
+{
+	for (vector<CadObject*>::iterator i = m_objects.begin();
+		i != m_objects.end(); i++)
+	{
+		(*i)->Move(m_basePoint - g_cursorWrld);
+	}
+	m_basePoint = g_cursorWrld;
+}
+
+
 Point<int> WorldToScreen(float x, float y)
 {
 	Point<int> result;
@@ -1345,7 +1490,7 @@ Point<int> WorldToScreen(float x, float y)
 }
 
 
-void DrawFantoms(HDC hdc)
+void FantomManager::DrawFantoms(HDC hdc)
 {
 	SetROP2(hdc, R2_XORPEN);
 	for (list<Fantom *>::iterator i = g_fantoms.begin();
@@ -1353,22 +1498,29 @@ void DrawFantoms(HDC hdc)
 	{
 		(*i)->Draw(hdc);
 	}
+	for (list<CadObject *>::const_iterator i = m_fantoms2.begin();
+		i != m_fantoms2.end(); i++)
+	{
+		(*i)->Draw(hdc, false);
+	}
 }
 
 
-void RecalcFantoms()
+void FantomManager::RecalcFantoms()
 {
 	for (list<Fantom *>::iterator i = g_fantoms.begin();
 		i != g_fantoms.end(); i++)
 	{
 		(*i)->Recalc();
 	}
+	if (RecalcFantomsHandler)
+		RecalcFantomsHandler();
 }
 
 
-void DeleteFantoms(bool update)
+void FantomManager::DeleteFantoms(bool update)
 {
-	if (g_fantoms.size() == 0)
+	if (g_fantoms.size() == 0 && m_fantoms2.size() == 0)
 		return;
 	if (update)
 	{
@@ -1376,11 +1528,13 @@ void DeleteFantoms(bool update)
 		DrawFantoms(hdc);
 	}
 	g_fantoms.clear();
+	m_fantoms2.clear();
 }
 
 
-void DeleteFantoms(HDC hdc)
+void FantomManager::DeleteFantoms(HDC hdc)
 {
 	DrawFantoms(hdc);
 	g_fantoms.clear();
+	m_fantoms2.clear();
 }

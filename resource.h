@@ -16,7 +16,7 @@
 #define ID_VIEW_PAN                     40005
 #define ID_40006                        40006
 #define ID_DRAW_LINES                   40007
-#define ID_40008                        40008
+#define ID_DRAW_CIRCLE                  40008
 #define ID_DRAW_ARCS                    40009
 #define ID_MODIFY_MOVE                  40010
 

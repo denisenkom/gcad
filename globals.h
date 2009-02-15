@@ -54,6 +54,7 @@ enum PointType
 	PointTypeEndPoint,
 	PointTypeMiddle,
 	PointTypeCenter,
+	PointTypeQuadrant,
 };
 
 
@@ -126,6 +127,23 @@ public:
 private:
 	Point<double> m_fixedPt;
 	int m_movingPtNo;
+};
+
+
+class CadCircle : public CadObject
+{
+public:
+	Point<double> Center;
+	double Radius;
+	virtual void Draw(HDC hdc, bool selected) const;
+	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
+	virtual Rect<double> GetBoundingRect() const;
+	virtual std::vector<Point<double> > GetManipulators() const;
+	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
+	virtual class Fantom * CreateFantom(int param);
+	virtual void Move(Point<double> displacement);
+	virtual CadCircle * Clone();
+	virtual void Assign(CadObject * rhs);
 };
 
 
@@ -215,8 +233,8 @@ class Tool
 public:
 	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam) = 0;
 	virtual void Start(const std::list<CadObject *> & selected) = 0;
-	virtual void Cancel() = 0;
-	virtual void Exiting() = 0;
+	virtual void Cancel() {}
+	virtual void Exiting() {}
 protected:
 	Tool() {}
 	virtual ~Tool() {}
@@ -289,11 +307,27 @@ public:
 	DrawLinesTool() : m_selectingSecondPoint(false) {}
 	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
-	virtual void Cancel();
-	virtual void Exiting();
 private:
 	bool m_selectingSecondPoint;
 	FantomLine * m_fantomLine; // not owned
+};
+
+
+class DrawCircleTool : public Tool
+{
+public:
+	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual void Start(const std::list<CadObject *> & selected);
+private:
+	enum State
+	{
+		StateSelectingCenter,
+		StateSelectingRadius,
+	};
+	State m_state;
+	std::auto_ptr<CadCircle> m_cadCircle;
+	std::auto_ptr<CadLine> m_radiusLine;
+	void RecalcFantomsHandler();
 };
 
 
@@ -302,8 +336,6 @@ class DrawArcsTool : public Tool
 public:
 	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
-	virtual void Cancel();
-	virtual void Exiting();
 private:
 	enum State
 	{
@@ -334,7 +366,9 @@ private:
 	State m_state;
 	Point<double> m_basePoint;
 	std::vector<CadObject *> m_objects;
+	std::auto_ptr<CadLine> m_fantomLine;
 	void DeleteCopies();
+	void RecalcFantomsHandler();
 };
 
 enum CursorType { CursorTypeManual, CursorTypeSystem };
@@ -403,20 +437,40 @@ private:
 };
 
 
+class FantomManager
+{
+public:
+	void AddFantom(Fantom * fantom) { g_fantoms.push_back(fantom); }
+	void AddFantom(CadObject * fantom) { m_fantoms2.push_back(fantom); }
+	void DrawFantoms(HDC hdc);
+	void RecalcFantoms();
+	void DeleteFantoms(bool update);
+	void DeleteFantoms(HDC hdc);
+	std::list<Fantom *> g_fantoms;
+	Loki::Functor<void> RecalcFantomsHandler;
+private:
+	std::list<CadObject *> m_fantoms2;
+};
+
+
 extern Selector g_selector;
 extern DefaultTool g_defaultTool;
 extern PanTool g_panTool;
 extern ZoomTool g_zoomTool;
 extern DrawLinesTool g_drawLinesTool;
+extern DrawCircleTool g_drawCircleTool;
 extern DrawArcsTool g_drawArcsTool;
 extern MoveTool g_moveTool;
 extern Tool * g_curTool;
+
+extern FantomManager g_fantomManager;
 
 const ToolInfo TOOLS[] = {
 	{ID_VIEW_SELECT, g_defaultTool},
 	{ID_VIEW_PAN, g_panTool},
 	{ID_VIEW_ZOOM, g_zoomTool},
 	{ID_DRAW_LINES, g_drawLinesTool},
+	{ID_DRAW_CIRCLE, g_drawCircleTool},
 	{ID_DRAW_ARCS, g_drawArcsTool},
 	{ID_MODIFY_MOVE, g_moveTool},
 };
@@ -533,12 +587,7 @@ inline const ToolInfo & ToolById(int id)
 }
 
 void SelectTool(int toolId);
-
-extern std::list<Fantom *> g_fantoms;
-void DrawFantoms(HDC hdc);
-void RecalcFantoms();
-void DeleteFantoms(bool update);
-void DeleteFantoms(HDC hdc);
+void ExitTool();
 
 void DrawObjectSnap(HDC hdc, Point<int> pos, PointType type);
 
