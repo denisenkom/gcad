@@ -324,6 +324,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 				assert(0);
 			Zoom(g_magification, g_magification * (GET_WHEEL_DELTA_WPARAM(wparam) * 0.2f / WHEEL_DELTA),
 				g_hscrollPos, g_vscrollPos, pt.x, pt.y);
+			g_cursorWrld = ScreenToWorld(g_cursorScn);
 			g_fantomManager.RecalcFantoms();
 		}
 		else
@@ -353,6 +354,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 					SetScrollInfo(hwnd, SB_VERT, &si, true);
 
 					ScrollWindow(hwnd, 0, oldPos - newPos, 0, 0);
+					g_cursorWrld = ScreenToWorld(g_cursorScn);
 
 					try
 					{
@@ -395,6 +397,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 				SetScrollInfo(hwnd, SB_HORZ, &si, true);
 
 				ScrollWindow(hwnd, oldPos - newPos, 0, 0, 0);
+				g_cursorWrld = ScreenToWorld(g_cursorScn);
 
 				try
 				{
