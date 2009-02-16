@@ -1051,6 +1051,12 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			}
 			while (false);
 			return 0;
+		case ID_EDIT_UNDO:
+			g_undoManager.Undo();
+			break;
+		case ID_EDIT_REDO:
+			g_undoManager.Redo();
+			break;
 		case ID_VIEW_PAN:
 		case ID_VIEW_ZOOM:
 		case ID_DRAW_LINES:
@@ -1085,6 +1091,19 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 	case WM_SETFOCUS:
 		SetFocus(g_hclientWindow);
 		return 0;
+	case WM_INITMENUPOPUP:
+	{
+		MENUITEMINFO mii = {0};
+		mii.cbSize = sizeof(mii);
+		mii.fMask = MIIM_STATE;
+		mii.fState = g_undoManager.CanUndo() ? MFS_ENABLED : MFS_DISABLED;
+		if (!SetMenuItemInfo(GetMenu(hwnd), ID_EDIT_UNDO, false, &mii))
+			assert(0);
+		mii.fState = g_undoManager.CanRedo() ? MFS_ENABLED : MFS_DISABLED;
+		if (!SetMenuItemInfo(GetMenu(hwnd), ID_EDIT_REDO, false, &mii))
+			assert(0);
+	}
+		return 0;
 	}
 	return DefWindowProcW(hwnd, msg, wparam, lparam);
 }
@@ -1093,6 +1112,14 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInst*/, LPSTR /*cmdLine*/, int cmdShow)
 {
 	g_hInstance = hInst;
+
+	HACCEL haccel = LoadAcceleratorsW(hInst, MAKEINTRESOURCEW(IDA_MAINACC));
+	if (!haccel)
+	{
+		assert(0);
+		return 1;
+	}
+
 	WNDCLASSW cls = {0};
 	cls.hInstance = hInst;
 	cls.lpfnWndProc = MainWndProc;
@@ -1130,6 +1157,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInst*/, LPSTR /*cmdLine*/, 
 	MSG msg;
 	while (GetMessageW(&msg, 0, 0, 0))
 	{
+		TranslateAccelerator(g_hmainWindow, haccel, &msg);
 		DispatchMessageW(&msg);
 	}
 	return msg.wParam;

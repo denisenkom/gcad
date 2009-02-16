@@ -2,13 +2,13 @@
 // Microsoft Visual C++ generated include file.
 // Used by resource.rc
 //
-#define IDR_MENU1                       101
 #define IDR_MAINMENU                    101
 #define IDB_TOOLBAR                     109
 #define IDB_TBDRAW                      110
 #define IDB_TBMODIFY                    111
 #define IDC_PAN                         113
 #define IDC_ZOOM                        116
+#define IDA_MAINACC                     117
 #define ID_VIEW_SELECT                  40001
 #define ID_FILE_CLOSE					40002
 #define ID_FILE_IMPORTDXF               40003
@@ -19,6 +19,8 @@
 #define ID_DRAW_CIRCLE                  40008
 #define ID_DRAW_ARCS                    40009
 #define ID_MODIFY_MOVE                  40010
+#define ID_EDIT_UNDO                    40100
+#define ID_EDIT_REDO                    40101
 
 // Next default values for new objects
 //

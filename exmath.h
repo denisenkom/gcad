@@ -58,12 +58,30 @@ struct Point
 
 	friend Point<T> operator-(const Point<T> & lhs, const Point<T> & rhs)
 	{
-		return Point<T>(rhs.X - lhs.X, rhs.Y - lhs.Y);
+		return Point<T>(lhs.X - rhs.X, lhs.Y - rhs.Y);
 	}
 
 	friend Point<T> operator+(const Point<T> & lhs, const Point<T> & rhs)
 	{
-		return Point<T>(rhs.X + lhs.X, rhs.Y + lhs.Y);
+		return Point<T>(lhs.X + rhs.X, lhs.Y + rhs.Y);
+	}
+
+	template <typename T2>
+	friend Point<T> operator/(const Point<T> & lhs, T2 rhs)
+	{
+		return Point<T>(lhs.X / rhs, lhs.Y / rhs);
+	}
+
+	template <typename T2>
+	friend Point<T> operator*(const Point<T> & lhs, T2 rhs)
+	{
+		return Point<T>(lhs.X * rhs, lhs.Y * rhs);
+	}
+
+	template <typename T2>
+	friend Point<T> operator*(T2 lhs, const Point<T> & rhs)
+	{
+		return rhs * lhs;
 	}
 };
 

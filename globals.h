@@ -67,8 +67,8 @@ public:
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const = 0;
 	virtual Rect<double> GetBoundingRect() const = 0; // returns normalized bounding rectangle
 	virtual std::vector<Point<double> > GetManipulators() const = 0;
+	virtual void UpdateManip(const Point<double> & pt, int id) = 0;
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const = 0;
-	virtual class Fantom * CreateFantom(int param) = 0;
 	virtual void Move(Point<double> displacement) = 0;
 	virtual CadObject * Clone() = 0;
 	virtual void Assign(CadObject * rhs) = 0;
@@ -76,22 +76,6 @@ protected:
 	CadObject() {}
 	CadObject(const CadObject & orig) {}
 	CadObject & operator=(const CadObject & orig) { return *this; }
-};
-
-
-class Fantom
-{
-public:
-	virtual ~Fantom() {}
-	virtual void Draw(HDC hdc) const = 0;
-	virtual void Recalc() const = 0;
-	virtual class CadObject * CreateCad() const = 0;
-	virtual void AssignToCad(CadObject * to) const = 0;
-protected:
-	Fantom() {}
-private:
-	Fantom(const Fantom & orig);
-	Fantom & operator=(const Fantom & orig);
 };
 
 
@@ -105,28 +89,12 @@ public:
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
 	virtual Rect<double> GetBoundingRect() const { return Rect<double>(Point1, Point2).Normalized(); }
 	virtual std::vector<Point<double> > GetManipulators() const;
+	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
-	virtual class Fantom * CreateFantom(int param);
 	virtual void Move(Point<double> displacement);
-	virtual CadObject * Clone();
+	virtual CadLine * Clone();
 	virtual void Assign(CadObject * rhs);
 	void Assign(CadLine * rhs);
-};
-
-
-class FantomLine : public Fantom
-{
-public:
-	FantomLine(Point<double> fixedPt) : m_fixedPt(fixedPt), m_movingPtNo(1) {}
-	FantomLine(int movingPtNo, Point<double> fixedPt) : m_fixedPt(fixedPt), m_movingPtNo(movingPtNo) {}
-	virtual void Draw(HDC hdc) const;
-	virtual void Recalc() const {}
-	virtual class CadObject * CreateCad() const;
-	virtual void AssignToCad(CadObject * to) const;
-	void AssignToCad(CadLine * to) const;
-private:
-	Point<double> m_fixedPt;
-	int m_movingPtNo;
 };
 
 
@@ -139,8 +107,8 @@ public:
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
 	virtual Rect<double> GetBoundingRect() const;
 	virtual std::vector<Point<double> > GetManipulators() const;
+	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
-	virtual class Fantom * CreateFantom(int param);
 	virtual void Move(Point<double> displacement);
 	virtual CadCircle * Clone();
 	virtual void Assign(CadObject * rhs);
@@ -161,37 +129,12 @@ public:
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
 	virtual Rect<double> GetBoundingRect() const;
 	virtual std::vector<Point<double> > GetManipulators() const;
+	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
-	virtual class Fantom * CreateFantom(int param);
 	virtual void Move(Point<double> displacement);
-	virtual CadObject * Clone();
+	virtual CadArc * Clone();
 	virtual void Assign(CadObject * rhs);
 	void Assign(CadArc * rhs);
-};
-
-
-class FantomArc : public Fantom
-{
-public:
-	FantomArc(Point<double> first, Point<double> second) : m_first(first), m_second(second), m_movingPtNo(2) {}
-	FantomArc(int movingPtNo, Point<double> first, Point<double> second, Point<double> third) :
-		m_first(first), m_second(second), m_third(third), m_movingPtNo(movingPtNo) {}
-	virtual void Draw(HDC hdc) const;
-	virtual void Recalc() const;
-	virtual class CadObject * CreateCad() const;
-	virtual void AssignToCad(CadObject * to) const;
-private:
-	// source points of arc
-	mutable Point<double> m_first;
-	Point<double> m_second;
-	mutable Point<double> m_third;
-	int m_movingPtNo;
-
-	// calculated parameters of arc
-	mutable Point<double> m_center;
-	mutable double m_radius;
-	mutable bool m_ccw;
-	mutable bool m_straight;
 };
 
 
@@ -260,10 +203,19 @@ private:
 	State m_state;
 	std::list<Manipulator> m_manipulators;
 	std::list<Manipulator>::iterator m_selManip;
-	std::list<CadObject *> m_manipulated;
+	struct Manipulated
+	{
+		CadObject * Original;
+		CadObject * Copy;
+		int ManipId;
+	};
+	std::list<Manipulated> m_manipulated;
+	std::auto_ptr<CadLine> m_fantomLine;
 	void RemoveManipulators(CadObject * obj);
 	void AddManipulators(CadObject * obj);
 	void SelectHandler(CadObject * obj, bool select);
+	void RecalcFantomsHandler();
+	void ClearManipulated();
 };
 
 
@@ -444,16 +396,89 @@ private:
 class FantomManager
 {
 public:
-	void AddFantom(Fantom * fantom) { g_fantoms.push_back(fantom); }
-	void AddFantom(CadObject * fantom) { m_fantoms2.push_back(fantom); }
+	void AddFantom(CadObject * fantom) { m_fantoms.push_back(fantom); }
 	void DrawFantoms(HDC hdc);
 	void RecalcFantoms();
 	void DeleteFantoms(bool update);
 	void DeleteFantoms(HDC hdc);
-	std::list<Fantom *> g_fantoms;
 	Loki::Functor<void> RecalcFantomsHandler;
 private:
-	std::list<CadObject *> m_fantoms2;
+	std::list<CadObject *> m_fantoms;
+};
+
+
+class UndoItem
+{
+public:
+	virtual ~UndoItem() {}
+	virtual void Do() = 0;
+	virtual void Undo() = 0;
+};
+
+
+class ReverseUndoItem : public UndoItem
+{
+public:
+	ReverseUndoItem(UndoItem * base) : m_base(base) {}
+	virtual void Do() { m_base->Undo(); }
+	virtual void Undo() { m_base->Do(); }
+private:
+	std::auto_ptr<UndoItem> m_base;
+};
+
+
+class GroupUndoItem : public UndoItem
+{
+public:
+	~GroupUndoItem();
+	virtual void Do();
+	virtual void Undo();
+	void AddItem(UndoItem * item) { m_items.push_back(item); }
+private:
+	typedef std::vector<UndoItem *> Items;
+	Items m_items;
+};
+
+
+class AddObjectUndoItem : public UndoItem
+{
+public:
+	AddObjectUndoItem(CadObject * obj) : m_obj(obj), m_ownedObj(obj) { }
+	virtual void Do();
+	virtual void Undo();
+private:
+	CadObject * m_obj;
+	std::auto_ptr<CadObject> m_ownedObj;
+};
+
+
+class AssignObjectUndoItem : public UndoItem
+{
+public:
+	AssignObjectUndoItem(CadObject * toObject, CadObject * fromObject) : m_toObject(toObject), m_fromObject(fromObject) {}
+	virtual void Do();
+	virtual void Undo();
+private:
+	CadObject * m_toObject;
+	std::auto_ptr<CadObject> m_fromObject;
+};
+
+
+class UndoManager
+{
+public:
+	UndoManager() : m_pos(m_items.begin()) {}
+	~UndoManager();
+	bool CanUndo();
+	void Undo();
+	bool CanRedo();
+	void Redo();
+	void AddWork(UndoItem * item);
+private:
+	typedef std::list<UndoItem *> Items;
+	Items m_items;
+	Items::iterator m_pos;
+	void DeleteItems(Items::iterator pos);
 };
 
 
@@ -468,6 +493,8 @@ extern MoveTool g_moveTool;
 extern Tool * g_curTool;
 
 extern FantomManager g_fantomManager;
+
+extern UndoManager g_undoManager;
 
 const ToolInfo TOOLS[] = {
 	{ID_VIEW_SELECT, g_defaultTool},

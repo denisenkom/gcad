@@ -60,6 +60,8 @@ Tool * g_curTool = &g_defaultTool;
 
 FantomManager g_fantomManager;
 
+UndoManager g_undoManager;
+
 bool g_canSnap = false;
 
 
@@ -124,10 +126,28 @@ bool CadLine::IntersectsRect(double x1, double y1, double x2, double y2) const
 
 vector<Point<double> > CadLine::GetManipulators() const
 {
-	vector<Point<double> > result(2);
+	vector<Point<double> > result(3);
 	result[0] = Point1;
-	result[1] = Point2;
+	result[1] = (Point1 + Point2)/2;
+	result[2] = Point2;
 	return result;
+}
+
+
+void CadLine::UpdateManip(const Point<double> & pt, int id)
+{
+	switch (id)
+	{
+	case 0: Point1 = pt; break;
+	case 1: {
+		Point<double> displace = pt - (Point1 + Point2)/2;
+		Point1 += displace;
+		Point2 += displace;
+		}
+	break;
+	case 2: Point2 = pt; break;
+	default: assert(0); break;
+	}
 }
 
 
@@ -135,17 +155,8 @@ vector<pair<Point<double>, PointType> > CadLine::GetPoints() const
 {
 	vector<pair<Point<double>, PointType> > result(3);
 	result[0] = make_pair(Point1, PointTypeEndPoint);
-	Point<double> middle((Point1.X + Point2.X)/2, (Point1.Y + Point2.Y)/2);
-	result[1] = make_pair(middle, PointTypeMiddle);
+	result[1] = make_pair((Point1 + Point2)/2, PointTypeMiddle);
 	result[2] = make_pair(Point2, PointTypeEndPoint);
-	return result;
-}
-
-
-Fantom * CadLine::CreateFantom(int param)
-{
-	int iparam = reinterpret_cast<int>(param);
-	FantomLine * result = new FantomLine(iparam, iparam == 1 ? Point1 : Point2);
 	return result;
 }
 
@@ -159,7 +170,7 @@ void CadLine::Move(Point<double> displacement)
 }
 
 
-CadObject * CadLine::Clone()
+CadLine * CadLine::Clone()
 {
 	return new CadLine(*this);
 }
@@ -176,40 +187,6 @@ void CadLine::Assign(CadObject * rhs)
 void CadLine::Assign(CadLine * line)
 {
 	*this = *line;
-}
-
-
-void FantomLine::Draw(HDC hdc) const
-{
-	SelectObject(hdc, g_lineHPen);
-	Point<int> startScn = WorldToScreen(m_fixedPt);
-	MoveToEx(hdc, startScn.X, startScn.Y, 0);
-	LineTo(hdc, g_cursorScn.X, g_cursorScn.Y);
-	LineTo(hdc, g_cursorScn.X + 1, g_cursorScn.Y);
-}
-
-
-CadObject * FantomLine::CreateCad() const
-{
-	CadLine * result = new CadLine();
-	AssignToCad(result);
-	return result;
-}
-
-
-void FantomLine::AssignToCad(CadObject * to) const
-{
-	CadLine * line = dynamic_cast<CadLine*>(to);
-	assert(line);
-	AssignToCad(line);
-}
-
-
-void FantomLine::AssignToCad(CadLine * to) const
-{
-	Point<double> movingPt = g_cursorWrld;
-	to->Point1 = m_movingPtNo == 0 ? movingPt : m_fixedPt;
-	to->Point2 = m_movingPtNo == 1 ? movingPt : m_fixedPt;
 }
 
 
@@ -291,6 +268,20 @@ vector<Point<double> > CadCircle::GetManipulators() const
 }
 
 
+void CadCircle::UpdateManip(const Point<double> & pt, int id)
+{
+	switch (id)
+	{
+	case 0: Radius = (pt - Center).Length(); break;
+	case 1: Radius = (pt - Center).Length(); break;
+	case 2: Radius = (pt - Center).Length(); break;
+	case 3: Radius = (pt - Center).Length(); break;
+	case 4: Center = pt; break;
+	default: assert(0); break;
+	}
+}
+
+
 std::vector<std::pair<Point<double>, PointType> > CadCircle::GetPoints() const
 {
 	pair<Point<double>, PointType> points[] = {
@@ -301,13 +292,6 @@ std::vector<std::pair<Point<double>, PointType> > CadCircle::GetPoints() const
 			pair<Point<double>, PointType>(Point<double>(Center.X, Center.Y), PointTypeCenter),
 	};
 	return vector<pair<Point<double>, PointType > >(points, points + sizeof(points)/sizeof(points[0]));
-}
-
-
-class Fantom * CadCircle::CreateFantom(int param)
-{
-	assert(0);
-	return 0;
 }
 
 
@@ -389,23 +373,32 @@ vector<Point<double> > CadArc::GetManipulators() const
 }
 
 
+void CadArc::UpdateManip(const Point<double> & pt, int id)
+{
+	Point<double> middle;
+	CalcMiddlePointOfArc(Center.X, Center.Y, Radius, Start.X, Start.Y, End.X, End.Y, Ccw, middle.X, middle.Y);
+	switch (id)
+	{
+	case 0: Start = pt; break;
+	case 1: middle = pt; break;
+	case 2: End = pt; break;
+	default: assert(0); break;
+	}
+	CircleArc<double> arc = ArcFrom3Pt(Start, middle, End);
+	Center = arc.Center;
+	Radius = arc.Radius;
+}
+
+
 vector<pair<Point<double>, PointType> > CadArc::GetPoints() const
 {
 	Point<double> middle;
 	CalcMiddlePointOfArc(Center.X, Center.Y, Radius, Start.X, Start.Y, End.X, End.Y, Ccw, middle.X, middle.Y);
-	vector<pair<Point<double>, PointType> > result(3);
+	vector<pair<Point<double>, PointType> > result(4);
 	result[0] = make_pair(Start, PointTypeEndPoint);
 	result[1] = make_pair(middle, PointTypeMiddle);
 	result[2] = make_pair(End, PointTypeEndPoint);
-	return result;
-}
-
-
-Fantom * CadArc::CreateFantom(int param)
-{
-	Point<double> middle;
-	CalcMiddlePointOfArc(Center.X, Center.Y, Radius, Start.X, Start.Y, End.X, End.Y, Ccw, middle.X, middle.Y);
-	FantomArc * result = new FantomArc(param, Start, middle, End);
+	result[3] = make_pair(Center, PointTypeCenter);
 	return result;
 }
 
@@ -421,7 +414,7 @@ void CadArc::Move(Point<double> displacement)
 }
 
 
-CadObject * CadArc::Clone()
+CadArc * CadArc::Clone()
 {
 	return new CadArc(*this);
 }
@@ -438,92 +431,6 @@ void CadArc::Assign(CadObject * rhs)
 void CadArc::Assign(CadArc * arc)
 {
 	*this = *arc;
-}
-
-
-void FantomArc::Recalc() const
-{
-	Point<double> movingPt = g_cursorWrld;
-	Point<double> p1 = m_first = m_movingPtNo == 0 ? movingPt : m_first;
-	Point<double> p2 = m_movingPtNo == 1 ? movingPt : m_second;
-	Point<double> p3 = m_third = m_movingPtNo == 2 ? movingPt : m_third;
-	CircleArc<double> arc = ArcFrom3Pt(p1, p2, p3);
-	m_straight = arc.Straight;
-	m_center = arc.Center;
-	m_radius = arc.Radius;
-	m_ccw = arc.Ccw;
-}
-
-
-void FantomArc::Draw(HDC hdc) const
-{
-	SelectObject(hdc, g_lineHPen);
-	if (m_straight)
-	{
-		Point<int> startScn = WorldToScreen(m_first);
-		MoveToEx(hdc, startScn.X, startScn.Y, 0);
-		LineTo(hdc, g_cursorScn.X, g_cursorScn.Y);
-		LineTo(hdc, g_cursorScn.X + 1, g_cursorScn.Y);
-	}
-	else
-	{
-		Point<int> center = WorldToScreen(m_center);
-		Point<int> from = WorldToScreen(m_first);
-		Point<int> to = WorldToScreen(m_third);
-		int radius = static_cast<int>(m_radius * g_magification);
-		if (!m_ccw)
-		{
-			Point<int> temp = from;
-			from = to;
-			to = temp;
-		}
-		Arc(hdc, center.X - radius, center.Y - radius, center.X + radius + 1, center.Y + radius + 1, from.X, from.Y, to.X, to.Y);
-	}
-}
-
-
-CadObject * FantomArc::CreateCad() const
-{
-	Recalc();
-	if (m_straight)
-	{
-		CadLine * result = new CadLine;
-		result->Point1 = m_first;
-		result->Point2 = m_third;
-		return result;
-	}
-	else
-	{
-		CadArc * result = new CadArc;
-		result->Start = m_first;
-		result->Center = m_center;
-		result->End = m_third;
-		result->Ccw = m_ccw;
-		result->Radius = m_radius;
-		return result;
-	}
-}
-
-
-void FantomArc::AssignToCad(CadObject * to) const
-{
-	if (m_straight)
-	{
-		CadLine * line = dynamic_cast<CadLine*>(to);
-		assert(line);
-		line->Point1 = m_first;
-		line->Point2 = m_third;
-	}
-	else
-	{
-		CadArc * arc = dynamic_cast<CadArc*>(to);
-		assert(arc);
-		arc->Start = m_first;
-		arc->Center = m_center;
-		arc->End = m_third;
-		arc->Ccw = m_ccw;
-		arc->Radius = m_radius;
-	}
 }
 
 
@@ -766,9 +673,6 @@ void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 		switch (msg)
 		{
 		case WM_LBUTTONDOWN:
-			g_selector.ProcessInput(hwnd, msg, wparam, lparam);
-			break;
-		case WM_LBUTTONUP:
 			do
 			{
 				// begin moving manipulator if clicked in it
@@ -805,10 +709,17 @@ void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 					for (list<pair<CadObject*, int> >::iterator i = m_selManip->Links.begin();
 						i != m_selManip->Links.end(); i++)
 					{
-						g_fantomManager.AddFantom(i->first->CreateFantom(i->second));
-						m_manipulated.push_back(i->first);
+						Manipulated manip;
+						manip.Original = i->first;
+						manip.Copy = manip.Original->Clone();
+						manip.ManipId = i->second;
+						m_manipulated.push_back(manip);
+						g_fantomManager.AddFantom(manip.Copy);
 					}
-					g_fantomManager.AddFantom(new FantomLine(m_selManip->Position));
+					m_fantomLine.reset(new CadLine());
+					m_fantomLine->Point1 = m_fantomLine->Point2 = m_selManip->Position;
+					g_fantomManager.AddFantom(m_fantomLine.get());
+					g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DefaultTool::RecalcFantomsHandler);
 					g_fantomManager.DrawFantoms(hdc);
 					g_customCursorType = CustomCursorTypeCross;
 					if (g_cursorDrawn)
@@ -824,66 +735,58 @@ void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 			}
 			while (false);
 			break;
-		case WM_MOUSEMOVE:
-			g_selector.ProcessInput(hwnd, msg, wparam, lparam);
-			break;
 		case WM_KEYDOWN:
 			switch (wparam)
 			{
 			case VK_DELETE:
-				do
+				if (g_selected.size() != 0)
 				{
-					bool needRefresh = false;
-					while (g_selected.size() != 0)
+					auto_ptr<GroupUndoItem> group(new GroupUndoItem);
+					for (list<CadObject *>::iterator i = g_selected.begin();
+						i != g_selected.end(); i++)
 					{
-						needRefresh = true;
-						bool found = false;
-						list<CadObject *>::iterator i = g_selected.begin();
-						for (list<CadObject *>::iterator j = g_doc.Objects.begin();
-							j != g_doc.Objects.end(); j++)
-						{
-							if (*i == *j)
-							{
-								CadObject * obj = *i;
-								g_selected.erase(i);
-								g_doc.Objects.erase(j);
-								RemoveManipulators(obj);
-								delete obj;
-								found = true;
-								break;
-							}
-						}
-						assert(found);
+						RemoveManipulators(*i);
+						group->AddItem(new AddObjectUndoItem(*i));
 					}
-					if (needRefresh)
-						InvalidateRect(hwnd, 0, true);
+					g_selected.clear();
+					g_undoManager.AddWork(new ReverseUndoItem(group.release()));
+					InvalidateRect(hwnd, 0, true);
 				}
-				while (false);
 				break;
 			}
+			break;
+		default:
+			g_selector.ProcessInput(hwnd, msg, wparam, lparam);
 			break;
 		}
 		break;
 	case MovingManip:
 		switch (msg)
 		{
-		case WM_LBUTTONUP:
-			list<Fantom*>::iterator ifan = g_fantomManager.g_fantoms.begin();
-			list<CadObject*>::iterator i = m_manipulated.begin();
-			for (; i != m_manipulated.end(); i++, ifan++)
+		case WM_LBUTTONDOWN:
+		{
+			auto_ptr<GroupUndoItem> group(new GroupUndoItem);
+			for (list<Manipulated>::iterator i = m_manipulated.begin();
+				i != m_manipulated.end(); i++)
 			{
-				list<CadObject*>::iterator pos = find(g_doc.Objects.begin(), g_doc.Objects.end(), *i);
-				assert(pos != g_doc.Objects.end());
-				RemoveManipulators(*pos);
-				(*ifan)->AssignToCad(*pos);
-				AddManipulators(*pos);
+				group->AddItem(new AssignObjectUndoItem(i->Original, i->Copy));
+				i->Copy = 0;
+				RemoveManipulators(i->Original);
 			}
-			m_manipulated.clear();
+			g_undoManager.AddWork(group.release());
+			for (list<Manipulated>::iterator i = m_manipulated.begin();
+				i != m_manipulated.end(); i++)
+			{
+				AddManipulators(i->Original);
+			}
+			ClearManipulated();
 			g_fantomManager.DeleteFantoms(false);
 			g_customCursorType = CustomCursorTypeSelect;
+			g_canSnap = false;
 			m_state = Selecting;
 			InvalidateRect(hwnd, 0, true);
 			UpdateWindow(hwnd);
+		}
 			break;
 		}
 		break;
@@ -911,7 +814,7 @@ void DefaultTool::Cancel()
 		m_manipulators.clear();
 		break;
 	case MovingManip:
-		m_manipulated.clear();
+		ClearManipulated();
 		g_customCursorType = CustomCursorTypeSelect;
 		m_state = Selecting;
 		g_canSnap = false;
@@ -925,7 +828,7 @@ void DefaultTool::Exiting()
 	switch (m_state)
 	{
 	case MovingManip:
-		m_manipulated.clear();
+		ClearManipulated();
 		g_customCursorType = CustomCursorTypeSelect;
 		m_state = Selecting;
 		g_canSnap = false;
@@ -1008,6 +911,29 @@ void DefaultTool::DrawManipulators(HDC hdc)
 		RECT rect = {pos.X - MANIP_SIZE/2, pos.Y - MANIP_SIZE/2, pos.X + MANIP_SIZE/2, pos.Y + MANIP_SIZE/2};
 		FillRect(hdc, &rect, g_manipHBrush);
 	}
+}
+
+
+void DefaultTool::RecalcFantomsHandler()
+{
+	if (m_fantomLine.get())
+		m_fantomLine->Point2 = g_cursorWrld;
+	for (list<Manipulated>::const_iterator i = m_manipulated.begin();
+		i != m_manipulated.end(); i++)
+	{
+		i->Copy->UpdateManip(g_cursorWrld, i->ManipId);
+	}
+}
+
+
+void DefaultTool::ClearManipulated()
+{
+	for (list<Manipulated>::const_iterator i = m_manipulated.begin();
+		i != m_manipulated.end(); i++)
+	{
+		delete i->Copy;
+	}
+	m_manipulated.clear();
 }
 
 
@@ -1142,7 +1068,7 @@ void DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPA
 		if (m_selectingSecondPoint)
 		{
 			g_fantomManager.DeleteFantoms(false);
-			g_doc.Objects.push_back(m_fantomLine->Clone());
+			g_undoManager.AddWork(new AddObjectUndoItem(m_fantomLine.release()));
 		}
 		else
 		{
@@ -1200,7 +1126,7 @@ void DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LP
 		{
 		case WM_LBUTTONUP:
 			m_radiusLine.reset(0);
-			g_doc.Objects.push_back(m_cadCircle.release());
+			g_undoManager.AddWork(new AddObjectUndoItem(m_cadCircle.release()));
 			ExitTool();
 			break;
 		}
@@ -1254,7 +1180,7 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			InvalidateRect(hwnd, 0, true);
 			break;
 		case StateSelectingThirdPoint:
-			g_doc.Objects.push_back(m_fantomArc->Clone());
+			g_undoManager.AddWork(new AddObjectUndoItem(m_fantomArc.release()));
 			ExitTool();
 			break;
 		}
@@ -1355,12 +1281,15 @@ void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 		case WM_LBUTTONUP:
 			do
 			{
+				auto_ptr<GroupUndoItem> group(new GroupUndoItem);
 				int no = 0;
 				for (list<CadObject*>::iterator i = g_selected.begin();
 					i != g_selected.end(); i++, no++)
 				{
-					(*i)->Assign(m_objects[no]);
+					group->AddItem(new AssignObjectUndoItem(*i, m_objects[no]));
+					m_objects[no] = 0;
 				}
+				g_undoManager.AddWork(group.release());
 				ExitTool();
 			}
 			while (false);
@@ -1428,7 +1357,7 @@ void MoveTool::RecalcFantomsHandler()
 	for (vector<CadObject*>::iterator i = m_objects.begin();
 		i != m_objects.end(); i++)
 	{
-		(*i)->Move(m_basePoint - g_cursorWrld);
+		(*i)->Move(g_cursorWrld - m_basePoint);
 	}
 	m_basePoint = g_cursorWrld;
 }
@@ -1450,13 +1379,8 @@ Point<int> WorldToScreen(float x, float y)
 void FantomManager::DrawFantoms(HDC hdc)
 {
 	SetROP2(hdc, R2_XORPEN);
-	for (list<Fantom *>::iterator i = g_fantoms.begin();
-		i != g_fantoms.end(); i++)
-	{
-		(*i)->Draw(hdc);
-	}
-	for (list<CadObject *>::const_iterator i = m_fantoms2.begin();
-		i != m_fantoms2.end(); i++)
+	for (list<CadObject *>::const_iterator i = m_fantoms.begin();
+		i != m_fantoms.end(); i++)
 	{
 		(*i)->Draw(hdc, false);
 	}
@@ -1465,11 +1389,6 @@ void FantomManager::DrawFantoms(HDC hdc)
 
 void FantomManager::RecalcFantoms()
 {
-	for (list<Fantom *>::iterator i = g_fantoms.begin();
-		i != g_fantoms.end(); i++)
-	{
-		(*i)->Recalc();
-	}
 	if (RecalcFantomsHandler)
 		RecalcFantomsHandler();
 }
@@ -1477,21 +1396,119 @@ void FantomManager::RecalcFantoms()
 
 void FantomManager::DeleteFantoms(bool update)
 {
-	if (g_fantoms.size() == 0 && m_fantoms2.size() == 0)
+	if (m_fantoms.size() == 0)
 		return;
 	if (update)
 	{
 		ClientDC hdc(g_hclientWindow);
 		DrawFantoms(hdc);
 	}
-	g_fantoms.clear();
-	m_fantoms2.clear();
+	m_fantoms.clear();
 }
 
 
 void FantomManager::DeleteFantoms(HDC hdc)
 {
 	DrawFantoms(hdc);
-	g_fantoms.clear();
-	m_fantoms2.clear();
+	m_fantoms.clear();
+}
+
+
+GroupUndoItem::~GroupUndoItem()
+{
+	for (Items::iterator i = m_items.begin(); i != m_items.end(); i++)
+		delete *i;
+}
+
+void GroupUndoItem::Do()
+{
+	for (Items::iterator i = m_items.begin(); i != m_items.end(); i++)
+		(*i)->Do();
+}
+
+void GroupUndoItem::Undo()
+{
+	for (Items::iterator i = m_items.end(); i != m_items.begin();)
+	{
+		i--;
+		(*i)->Undo();
+	}
+}
+
+
+void AddObjectUndoItem::Do()
+{
+	g_doc.Objects.push_back(m_obj);
+	m_ownedObj.release();
+}
+
+void AddObjectUndoItem::Undo()
+{
+	g_doc.Objects.remove(m_obj);
+	m_ownedObj.reset(m_obj);
+}
+
+
+void AssignObjectUndoItem::Do()
+{
+	auto_ptr<CadObject> copy(m_toObject->Clone());
+	m_toObject->Assign(m_fromObject.get());
+	m_fromObject = copy;
+}
+
+
+void AssignObjectUndoItem::Undo()
+{
+	Do();
+}
+
+
+UndoManager::~UndoManager()
+{
+	DeleteItems(m_items.begin());
+}
+
+void UndoManager::AddWork(UndoItem * item)
+{
+	DeleteItems(m_pos);
+	m_items.push_back(item);
+	m_pos = m_items.end();
+	item->Do();
+}
+
+bool UndoManager::CanUndo()
+{
+	return m_pos != m_items.begin();
+}
+
+void UndoManager::Undo()
+{
+	if (!CanUndo())
+		return;
+	ExitTool();
+	m_pos--;
+	(*m_pos)->Undo();
+	InvalidateRect(g_hclientWindow, 0, true);
+}
+
+bool UndoManager::CanRedo()
+{
+	return m_pos != m_items.end();
+}
+
+void UndoManager::Redo()
+{
+	if (!CanRedo())
+		return;
+	ExitTool();
+	(*m_pos)->Do();
+	m_pos++;
+	InvalidateRect(g_hclientWindow, 0, true);
+}
+
+void UndoManager::DeleteItems(Items::iterator pos)
+{
+	for (Items::iterator i = pos; i != m_items.end(); i++)
+		delete *i;
+	m_items.erase(pos, m_items.end());
 }

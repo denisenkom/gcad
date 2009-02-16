@@ -9,6 +9,8 @@
 //
 #include "afxres.h"
 
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "manifest.xml"
+
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
 
@@ -47,6 +49,13 @@ END
 #endif    // APSTUDIO_INVOKED
 
 
+IDA_MAINACC ACCELERATORS
+{
+	"^Z",               ID_EDIT_UNDO
+	"^Y",               ID_EDIT_REDO
+}
+
+
 /////////////////////////////////////////////////////////////////////////////
 //
 // Menu
@@ -58,6 +67,11 @@ BEGIN
     BEGIN
         MENUITEM "Импорт DXF",                  ID_FILE_IMPORTDXF
         MENUITEM "Выход",                       ID_FILE_CLOSE
+    END    
+    POPUP "Правка"
+    BEGIN
+    	MENUITEM "Отмена\tCtrl+Z",              ID_EDIT_UNDO
+    	MENUITEM "Повтор\tCtrl+Y",              ID_EDIT_REDO
     END
     POPUP "Вид"
     BEGIN
