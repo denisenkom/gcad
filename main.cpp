@@ -36,6 +36,7 @@ HPEN g_objectSnapHPen = 0;
 bool g_objSnapDrawn = false;
 PointType g_objSnapType;
 Point<int> g_objSnapPos;
+unsigned int g_clipboardFormat;
 
 
 void DrawObjectSnap(HDC hdc, Point<int> pos, PointType type)
@@ -855,6 +856,9 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		g_hclientWindow = CreateWindowExW(0, MAINCLIENTCLASS, L"", WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL, 0, 0, 0, 0, hwnd, reinterpret_cast<HMENU>(1), g_hInstance, 0);
 		if (g_hclientWindow == 0)
 			return -1;
+		g_clipboardFormat = RegisterClipboardFormatW(L"805e724a-d4d2-4fd7-ac7e-bbd4641f220a");
+		if (!g_clipboardFormat)
+			assert(0);
 		return 0;
 	case WM_DESTROY:
 		PostQuitMessage(0);
@@ -1068,6 +1072,44 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 		case ID_MODIFY_MOVE:
 			SelectTool(LOWORD(wparam));
 			return 0;
+		case ID_EDIT_CUT:
+		case ID_EDIT_COPY:
+			if (g_selected.size() != 0)
+			{
+				if (OpenClipboard(hwnd))
+				{
+					if (!EmptyClipboard())
+						assert(0);
+					size_t totalSize = 0;
+					for (list<CadObject *>::const_iterator i = g_selected.begin();
+						i != g_selected.end(); i++)
+					{
+						totalSize += (*i)->Serialize(0);
+					}
+					HGLOBAL hglob = GlobalAlloc(GMEM_MOVEABLE, totalSize);
+					assert(hglob);
+					unsigned char * pmem = reinterpret_cast<unsigned char *>(GlobalLock(hglob));
+					unsigned char * ptr = pmem;
+					assert(pmem);
+					for (list<CadObject *>::const_iterator i = g_selected.begin();
+						i != g_selected.end(); i++)
+					{
+						ptr += (*i)->Serialize(ptr);
+					}
+					if (!GlobalUnlock(hglob))
+						assert(GetLastError() == NO_ERROR);
+					if (!SetClipboardData(g_clipboardFormat, hglob))
+						assert(0);
+					if (!CloseClipboard())
+						assert(0);
+					if (LOWORD(wparam) == ID_EDIT_CUT)
+						DeleteSelectedObjects();
+				}
+			}
+			return 0;
+		case ID_EDIT_PASTE:
+			SelectTool(ID_EDIT_PASTE);
+			break;
 		}
 		break;
 	case WM_SIZE:

@@ -53,6 +53,9 @@ IDA_MAINACC ACCELERATORS
 {
 	"^Z",               ID_EDIT_UNDO
 	"^Y",               ID_EDIT_REDO
+	"^X",               ID_EDIT_CUT
+	"^C",               ID_EDIT_COPY
+	"^V",               ID_EDIT_PASTE
 }
 
 

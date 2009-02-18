@@ -12,6 +12,7 @@
 #include <loki/typelistmacros.h>
 #include <algorithm>
 #include <cmath>
+#include <cfloat>
 
 
 using namespace std;
@@ -56,6 +57,7 @@ DrawLinesTool g_drawLinesTool;
 DrawCircleTool g_drawCircleTool;
 DrawArcsTool g_drawArcsTool;
 MoveTool g_moveTool;
+PasteTool g_pasteTool;
 Tool * g_curTool = &g_defaultTool;
 
 FantomManager g_fantomManager;
@@ -64,6 +66,7 @@ UndoManager g_undoManager;
 
 bool g_canSnap = false;
 
+std::list<CadObject *> g_selected;
 
 void DrawCursorRaw(HDC hdc, int x, int y)
 {
@@ -187,6 +190,27 @@ void CadLine::Assign(CadObject * rhs)
 void CadLine::Assign(CadLine * line)
 {
 	*this = *line;
+}
+
+
+size_t CadLine::Serialize(unsigned char * ptr) const
+{
+	size_t result = 0;
+	result += WritePtr(ptr, ID);
+	result += WritePtr(ptr, Point1.X);
+	result += WritePtr(ptr, Point1.Y);
+	result += WritePtr(ptr, Point2.X);
+	result += WritePtr(ptr, Point2.Y);
+	return result;
+}
+
+
+void CadLine::Load(unsigned char const *& ptr, size_t & size)
+{
+	ReadPtr(ptr, Point1.X, size);
+	ReadPtr(ptr, Point1.Y, size);
+	ReadPtr(ptr, Point2.X, size);
+	ReadPtr(ptr, Point2.Y, size);
 }
 
 
@@ -315,6 +339,25 @@ void CadCircle::Assign(CadObject * rhs)
 }
 
 
+size_t CadCircle::Serialize(unsigned char * ptr) const
+{
+	size_t result = 0;
+	result += WritePtr(ptr, ID);
+	result += WritePtr(ptr, Center.X);
+	result += WritePtr(ptr, Center.Y);
+	result += WritePtr(ptr, Radius);
+	return result;
+}
+
+
+void CadCircle::Load(unsigned char const *& ptr, size_t & size)
+{
+	ReadPtr(ptr, Center.X, size);
+	ReadPtr(ptr, Center.Y, size);
+	ReadPtr(ptr, Radius, size);
+}
+
+
 void CadArc::Draw(HDC hdc, bool selected) const
 {
 	HPEN hpen = selected ? g_selectedLineHPen : g_lineHPen;
@@ -322,7 +365,7 @@ void CadArc::Draw(HDC hdc, bool selected) const
 		assert(0);
 	if (SetBkColor(hdc, RGB(0, 0, 0)) == CLR_INVALID)
 		assert(0);
-	if (Straight)
+	if (Radius == 0)
 	{
 		Point<int> startScn = WorldToScreen(Start);
 		Point<int> endScn = WorldToScreen(End);
@@ -434,6 +477,35 @@ void CadArc::Assign(CadArc * arc)
 }
 
 
+size_t CadArc::Serialize(unsigned char * ptr) const
+{
+	size_t result = 0;
+	result += WritePtr(ptr, ID);
+	result += WritePtr(ptr, Center.X);
+	result += WritePtr(ptr, Center.Y);
+	result += WritePtr(ptr, Radius);
+	result += WritePtr(ptr, Start.X);
+	result += WritePtr(ptr, Start.Y);
+	result += WritePtr(ptr, End.X);
+	result += WritePtr(ptr, End.Y);
+	result += WritePtr(ptr, Ccw);
+	return result;
+}
+
+
+void CadArc::Load(unsigned char const *& ptr, size_t & size)
+{
+	ReadPtr(ptr, Center.X, size);
+	ReadPtr(ptr, Center.Y, size);
+	ReadPtr(ptr, Radius, size);
+	ReadPtr(ptr, Start.X, size);
+	ReadPtr(ptr, Start.Y, size);
+	ReadPtr(ptr, End.X, size);
+	ReadPtr(ptr, End.Y, size);
+	ReadPtr(ptr, Ccw, size);
+}
+
+
 void ExtendHScrollLimits(SCROLLINFO & si)
 {
 	if (g_hscrollPos < g_hscrollMin)
@@ -493,8 +565,6 @@ void ExtendVScrollLimits(SCROLLINFO & si)
 	}
 }
 
-
-static std::list<CadObject *> g_selected;
 
 void SelectTool(int toolId)
 {
@@ -664,7 +734,6 @@ void Selector::Cancel()
 		g_selected.clear();
 }
 
-
 void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (m_state)
@@ -739,19 +808,7 @@ void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 			switch (wparam)
 			{
 			case VK_DELETE:
-				if (g_selected.size() != 0)
-				{
-					auto_ptr<GroupUndoItem> group(new GroupUndoItem);
-					for (list<CadObject *>::iterator i = g_selected.begin();
-						i != g_selected.end(); i++)
-					{
-						RemoveManipulators(*i);
-						group->AddItem(new AddObjectUndoItem(*i));
-					}
-					g_selected.clear();
-					g_undoManager.AddWork(new ReverseUndoItem(group.release()));
-					InvalidateRect(hwnd, 0, true);
-				}
+				DeleteSelectedObjects();
 				break;
 			}
 			break;
@@ -1172,7 +1229,7 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			m_fantomArc.reset(new CadArc());
 			m_fantomArc->Start = m_fantomLine->Point1;
 			m_fantomArc->End = m_secondPoint = m_fantomLine->Point2;
-			m_fantomArc->Straight = true;
+			m_fantomArc->Radius = 0;
 			m_fantomLine.reset(0);
 			g_fantomManager.AddFantom(m_fantomArc.get());
 			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawArcsTool::RecalcFantomsHandler);
@@ -1210,7 +1267,6 @@ void DrawArcsTool::RecalcFantomsHandler()
 		m_fantomArc->End = g_cursorWrld;
 		m_fantomArc->Ccw = arc.Ccw;
 		m_fantomArc->Radius = arc.Radius;
-		m_fantomArc->Straight = arc.Straight;
 	}
 }
 
@@ -1353,6 +1409,109 @@ void MoveTool::DeleteCopies()
 
 
 void MoveTool::RecalcFantomsHandler()
+{
+	for (vector<CadObject*>::iterator i = m_objects.begin();
+		i != m_objects.end(); i++)
+	{
+		(*i)->Move(g_cursorWrld - m_basePoint);
+	}
+	m_basePoint = g_cursorWrld;
+}
+
+
+void PasteTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+{
+	switch (msg)
+	{
+	case WM_LBUTTONUP:
+		do
+		{
+			auto_ptr<GroupUndoItem> group(new GroupUndoItem);
+			for (vector<CadObject*>::iterator i = m_objects.begin();
+				i != m_objects.end(); i++)
+			{
+				group->AddItem(new AddObjectUndoItem(*i));
+				*i = 0;
+			}
+			g_undoManager.AddWork(group.release());
+			ExitTool();
+		}
+		while (false);
+		break;
+	}
+}
+
+
+void PasteTool::Start(const std::list<CadObject *> & /*selected*/)
+{
+	g_cursorType = CursorTypeManual;
+	g_cursorHandle = 0;
+	g_customCursorType = CustomCursorTypeCross;
+	g_canSnap = true;
+	if (!OpenClipboard(g_hmainWindow))
+		assert(0);
+	HGLOBAL hglob = GetClipboardData(g_clipboardFormat);
+	if (hglob != 0)
+	{
+		size_t size = GlobalSize(hglob);
+		assert(size != 0);
+		unsigned char const * ptr = reinterpret_cast<unsigned char *>(GlobalLock(hglob));
+		m_basePoint = Point<double>(DBL_MAX, DBL_MAX);
+		while (size != 0)
+		{
+			int id;
+			ReadPtr(ptr, id, size);
+			CadObject * obj;
+			switch (id)
+			{
+			case CadLine::ID: obj = new CadLine(); break;
+			case CadCircle::ID: obj = new CadCircle(); break;
+			case CadArc::ID: obj = new CadArc(); break;
+			default: assert(0); break;
+			}
+			obj->Load(ptr, size);
+			m_objects.push_back(obj);
+			g_fantomManager.AddFantom(obj);
+			m_basePoint = Point<double>(min(m_basePoint.X, obj->GetBoundingRect().Pt1.X),
+					min(m_basePoint.Y, obj->GetBoundingRect().Pt1.Y));
+		}
+		g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &PasteTool::RecalcFantomsHandler);
+		// aligning base point of objects with cursor
+		RecalcFantomsHandler();
+	}
+	else
+	{
+		ExitTool();
+	}
+	if (!CloseClipboard())
+		assert(0);
+}
+
+
+void PasteTool::Cancel()
+{
+	Exiting();
+}
+
+
+void PasteTool::Exiting()
+{
+	DeleteCopies();
+}
+
+
+void PasteTool::DeleteCopies()
+{
+	for (vector<CadObject*>::iterator i = m_objects.begin();
+		i != m_objects.end(); i++)
+	{
+		delete *i;
+	}
+	m_objects.resize(0);
+}
+
+
+void PasteTool::RecalcFantomsHandler()
 {
 	for (vector<CadObject*>::iterator i = m_objects.begin();
 		i != m_objects.end(); i++)
@@ -1511,4 +1670,22 @@ void UndoManager::DeleteItems(Items::iterator pos)
 	for (Items::iterator i = pos; i != m_items.end(); i++)
 		delete *i;
 	m_items.erase(pos, m_items.end());
+}
+
+
+void DeleteSelectedObjects()
+{
+	if (g_selected.size() != 0)
+	{
+		auto_ptr<GroupUndoItem> group(new GroupUndoItem);
+		for (list<CadObject *>::iterator i = g_selected.begin();
+			i != g_selected.end(); i++)
+		{
+			g_defaultTool.RemoveManipulators(*i);
+			group->AddItem(new AddObjectUndoItem(*i));
+		}
+		g_selected.clear();
+		g_undoManager.AddWork(new ReverseUndoItem(group.release()));
+		InvalidateRect(g_hclientWindow, 0, true);
+	}
 }

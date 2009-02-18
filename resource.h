@@ -21,6 +21,9 @@
 #define ID_MODIFY_MOVE                  40010
 #define ID_EDIT_UNDO                    40100
 #define ID_EDIT_REDO                    40101
+#define ID_EDIT_CUT                     40102
+#define ID_EDIT_COPY                    40103
+#define ID_EDIT_PASTE                   40104
 
 // Next default values for new objects
 //

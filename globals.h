@@ -72,6 +72,8 @@ public:
 	virtual void Move(Point<double> displacement) = 0;
 	virtual CadObject * Clone() = 0;
 	virtual void Assign(CadObject * rhs) = 0;
+	virtual size_t Serialize(unsigned char * ptr) const = 0;
+	virtual void Load(unsigned char const *& ptr, size_t & size) = 0;
 protected:
 	CadObject() {}
 	CadObject(const CadObject & orig) {}
@@ -82,6 +84,7 @@ protected:
 class CadLine : public CadObject
 {
 public:
+	static const int ID = 1;
 	Point<double> Point1;
 	Point<double> Point2;
 
@@ -95,12 +98,15 @@ public:
 	virtual CadLine * Clone();
 	virtual void Assign(CadObject * rhs);
 	void Assign(CadLine * rhs);
+	virtual size_t Serialize(unsigned char * ptr) const;
+	virtual void Load(unsigned char const *& ptr, size_t & size);
 };
 
 
 class CadCircle : public CadObject
 {
 public:
+	static const int ID = 2;
 	Point<double> Center;
 	double Radius;
 	virtual void Draw(HDC hdc, bool selected) const;
@@ -112,18 +118,20 @@ public:
 	virtual void Move(Point<double> displacement);
 	virtual CadCircle * Clone();
 	virtual void Assign(CadObject * rhs);
+	virtual size_t Serialize(unsigned char * ptr) const;
+	virtual void Load(unsigned char const *& ptr, size_t & size);
 };
 
 
 class CadArc : public CadObject
 {
 public:
+	static const int ID = 3;
 	Point<double> Center;
 	Point<double> Start;
 	Point<double> End;
-	double Radius;
+	double Radius; // if == 0 than arc is straight line
 	bool Ccw;
-	bool Straight;
 
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
@@ -135,6 +143,8 @@ public:
 	virtual CadArc * Clone();
 	virtual void Assign(CadObject * rhs);
 	void Assign(CadArc * rhs);
+	virtual size_t Serialize(unsigned char * ptr) const;
+	virtual void Load(unsigned char const *& ptr, size_t & size);
 };
 
 
@@ -197,6 +207,7 @@ public:
 	void DrawManipulators(HDC hdc);
 	virtual void Cancel();
 	virtual void Exiting();
+	void RemoveManipulators(CadObject * obj);
 private:
 	enum State {Selecting, MovingManip};
 	static const int MANIP_SIZE = 10; // pixels
@@ -211,7 +222,6 @@ private:
 	};
 	std::list<Manipulated> m_manipulated;
 	std::auto_ptr<CadLine> m_fantomLine;
-	void RemoveManipulators(CadObject * obj);
 	void AddManipulators(CadObject * obj);
 	void SelectHandler(CadObject * obj, bool select);
 	void RecalcFantomsHandler();
@@ -326,6 +336,22 @@ private:
 	void DeleteCopies();
 	void RecalcFantomsHandler();
 };
+
+
+class PasteTool : public Tool
+{
+public:
+	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Cancel();
+	virtual void Exiting();
+private:
+	Point<double> m_basePoint;
+	std::vector<CadObject *> m_objects;
+	void DeleteCopies();
+	void RecalcFantomsHandler();
+};
+
 
 enum CursorType { CursorTypeManual, CursorTypeSystem };
 enum CustomCursorType { CustomCursorTypeSelect, CustomCursorTypeCross, CustomCursorTypeBox };
@@ -490,6 +516,7 @@ extern DrawLinesTool g_drawLinesTool;
 extern DrawCircleTool g_drawCircleTool;
 extern DrawArcsTool g_drawArcsTool;
 extern MoveTool g_moveTool;
+extern PasteTool g_pasteTool;
 extern Tool * g_curTool;
 
 extern FantomManager g_fantomManager;
@@ -504,6 +531,7 @@ const ToolInfo TOOLS[] = {
 	{ID_DRAW_CIRCLE, g_drawCircleTool},
 	{ID_DRAW_ARCS, g_drawArcsTool},
 	{ID_MODIFY_MOVE, g_moveTool},
+	{ID_EDIT_PASTE, g_pasteTool},
 };
 const int NUM_TOOLS = sizeof(TOOLS) / sizeof(TOOLS[0]);
 
@@ -559,6 +587,9 @@ extern bool g_objSnapDrawn;
 extern PointType g_objSnapType;
 extern Point<int> g_objSnapPos;
 extern bool g_canSnap;
+
+extern std::list<CadObject *> g_selected;
+extern unsigned int g_clipboardFormat;
 
 
 Point<int> WorldToScreen(float x, float y);
@@ -623,5 +654,30 @@ void ExitTool();
 void DrawObjectSnap(HDC hdc, Point<int> pos, PointType type);
 
 bool IsSelected(const CadObject * obj);
+
+
+template<class T>
+size_t WritePtr(unsigned char * &ptr, T val)
+{
+	if (ptr != 0)
+	{
+		*reinterpret_cast<T*>(ptr) = val;
+		ptr += sizeof(T);
+	}
+	return sizeof(T);
+}
+
+
+template<class T>
+void ReadPtr(unsigned char const * &ptr, T & val, size_t & size)
+{
+	assert(ptr != 0);
+	assert(size >= sizeof(T));
+	val = *reinterpret_cast<T const *>(ptr);
+	ptr += sizeof(T);
+	size -= sizeof(T);
+}
+
+void DeleteSelectedObjects();
 
 #endif /* GLOBALS_H_ */
