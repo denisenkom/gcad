@@ -172,7 +172,7 @@ class Selector
 {
 public:
 	Selector() : m_lassoOn(false), m_lassoDrawn(false) {}
-	void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	void Cancel();
 	Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> SelectHandler;
 private:
@@ -185,10 +185,11 @@ private:
 class Tool
 {
 public:
-	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam) = 0;
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam) = 0;
 	virtual void Start(const std::list<CadObject *> & selected) = 0;
-	virtual void Cancel() {}
+	virtual void Cancel() { Exiting(); }
 	virtual void Exiting() {}
+	virtual void Command(const std::wstring & cmd) {}
 protected:
 	Tool() {}
 	virtual ~Tool() {}
@@ -202,7 +203,7 @@ class DefaultTool : public Tool
 {
 public:
 	DefaultTool() : m_state(Selecting) {}
-	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
 	void DrawManipulators(HDC hdc);
 	virtual void Cancel();
@@ -233,10 +234,8 @@ class ZoomTool : public Tool
 {
 public:
 	ZoomTool() : m_zooming(false) {}
-	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
-	virtual void Cancel() {}
-	virtual void Exiting() {}
 private:
 	bool m_zooming;
 	int m_startX;
@@ -253,10 +252,8 @@ class PanTool : public Tool
 {
 public:
 	PanTool() : m_panning(false) {}
-	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
-	virtual void Cancel() {}
-	virtual void Exiting() {}
 private:
 	bool m_panning;
 	int m_prevX;
@@ -267,20 +264,24 @@ private:
 class DrawLinesTool : public Tool
 {
 public:
-	DrawLinesTool() : m_selectingSecondPoint(false) {}
-	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	DrawLinesTool() {}
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Command(const std::wstring & cmd);
+	virtual void Exiting();
 private:
-	bool m_selectingSecondPoint;
+	std::list<Point<double> > m_points;
 	std::auto_ptr<CadLine> m_fantomLine;
 	void RecalcFantomsHandler();
+	void FeedPoint(const Point<double> & pt);
+	void UpdatePrompt();
 };
 
 
 class DrawCircleTool : public Tool
 {
 public:
-	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
 private:
 	enum State
@@ -298,7 +299,7 @@ private:
 class DrawArcsTool : public Tool
 {
 public:
-	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
 private:
 	enum State
@@ -318,7 +319,7 @@ private:
 class MoveTool : public Tool
 {
 public:
-	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
 	virtual void Cancel();
 	virtual void Exiting();
@@ -341,7 +342,7 @@ private:
 class PasteTool : public Tool
 {
 public:
-	virtual void ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
 	virtual void Cancel();
 	virtual void Exiting();
@@ -463,6 +464,7 @@ public:
 private:
 	typedef std::vector<UndoItem *> Items;
 	Items m_items;
+	friend class UndoManager;
 };
 
 
@@ -500,10 +502,14 @@ public:
 	bool CanRedo();
 	void Redo();
 	void AddWork(UndoItem * item);
+	void AddGroupItem(std::auto_ptr<UndoItem> item);
+	void RemoveGroupItem();
+	void EndGroup();
 private:
 	typedef std::list<UndoItem *> Items;
 	Items m_items;
 	Items::iterator m_pos;
+	std::auto_ptr<GroupUndoItem> m_group;
 	void DeleteItems(Items::iterator pos);
 };
 

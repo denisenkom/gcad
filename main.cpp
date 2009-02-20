@@ -1,5 +1,4 @@
-#define _WIN32_IE 0x0500
-#define _WIN32_WINNT 0x0501
+#include "console.h"
 #include "globals.h"
 #include "resource.h"
 #include <windows.h>
@@ -19,6 +18,7 @@ HWND g_hmainWindow = 0;
 HWND g_topRebar = 0;
 HWND g_leftRebar = 0;
 HWND g_rightRebar = 0;
+HWND g_bottomRebar = 0;
 HWND g_htoolbar = 0;
 HWND g_htoolbarDraw = 0;
 HWND g_htoolbarMod = 0;
@@ -562,8 +562,10 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 			assert(0);
 			break;
 		}
-		g_curTool->ProcessInput(hwnd, msg, wparam, lparam);
-		return 0;
+		if (g_curTool->ProcessInput(hwnd, msg, wparam, lparam))
+			return 0;
+		else
+			return DefWindowProc(hwnd, msg, wparam, lparam);
 	case WM_MOUSELEAVE:
 		g_mouseInsideClient = false;
 		switch (g_cursorType)
@@ -582,14 +584,13 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 				{
 				}
 			}
-			break;
+			return 0;
 		case CursorTypeSystem:
-			break;
+			return 0;
 		default:
 			assert(0);
-			break;
+			return DefWindowProc(hwnd, msg, wparam, lparam);
 		}
-		return 0;
 	case WM_KEYDOWN:
 		switch (wparam)
 		{
@@ -603,15 +604,34 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 			}
 			InvalidateRect(hwnd, 0, true);
 			UpdateWindow(hwnd);
-			break;
+			return 0;
+		case VK_RETURN:
+			if (g_console.HasInput())
+			{
+				return g_console.Input(msg, wparam, lparam);
+			}
+			else
+			{
+				if (g_curTool->ProcessInput(hwnd, msg, wparam, lparam))
+					return 0;
+				else
+					return DefWindowProc(hwnd, msg, wparam, lparam);
+			}
 		default:
-			g_curTool->ProcessInput(hwnd, msg, wparam, lparam);
-			break;
+			if (g_curTool->ProcessInput(hwnd, msg, wparam, lparam))
+				return 0;
+			else
+				return g_console.Input(msg, wparam, lparam);
 		}
-		return 0;
+	case WM_CHAR:
+		return g_console.Input(msg, wparam, lparam);
+	default:
+		if (g_curTool->ProcessInput(hwnd, msg, wparam, lparam))
+			return 0;
+		else
+			return DefWindowProc(hwnd, msg, wparam, lparam);
+
 	}
-	g_curTool->ProcessInput(hwnd, msg, wparam, lparam);
-	return DefWindowProc(hwnd, msg, wparam, lparam);
 }
 
 
@@ -728,6 +748,27 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 				hwnd, 0, g_hInstance, 0);
 		if (g_rightRebar == 0)
 			return -1;
+		g_bottomRebar = CreateWindowExW(0, REBARCLASSNAMEW, 0,
+				WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN |
+				RBS_VARHEIGHT | CCS_NODIVIDER | RBS_BANDBORDERS | CCS_NORESIZE,
+				0,0,0,0, hwnd, 0, g_hInstance, 0);
+		if (g_bottomRebar == 0)
+			return -1;
+		do
+		{
+			HWND hconsole = g_console.Init(hwnd);
+			REBARBANDINFOW bi = {0};
+			bi.cbSize = sizeof(bi);
+			bi.fMask = RBBIM_STYLE | RBBIM_CHILD | RBBIM_CHILDSIZE;
+			bi.fStyle = RBBS_CHILDEDGE | RBBS_GRIPPERALWAYS;
+			bi.hwndChild = hconsole;
+			bi.cyMinChild = g_console.MinHeight();
+			bi.cxMinChild = 0;
+			if (!SendMessageW(g_bottomRebar, RB_INSERTBAND, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(&bi)))
+				return -1;
+		}
+		while (false);
+
 		g_statusBar = CreateWindowExW(0, STATUSCLASSNAMEW, 0, WS_CHILD | WS_VISIBLE |
 				WS_CLIPSIBLINGS | SBARS_SIZEGRIP, 0, 0, 0, 0, hwnd, 0, g_hInstance, 0);
 		if (g_statusBar == 0)
@@ -1118,6 +1159,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			unsigned int topRebarHeight = static_cast<unsigned int>(SendMessageW(g_topRebar, RB_GETBARHEIGHT, 0, 0));
 			unsigned int leftRebarWidth = static_cast<unsigned int>(SendMessageW(g_leftRebar, RB_GETBARHEIGHT, 0, 0));
 			unsigned int rightRebarWidth = static_cast<unsigned int>(SendMessageW(g_leftRebar, RB_GETBARHEIGHT, 0, 0));
+			unsigned int bottomRebarHeight = static_cast<unsigned int>(SendMessageW(g_bottomRebar, RB_GETBARHEIGHT, 0, 0));
 			SendMessageW(g_statusBar, WM_SIZE, 0, 0);
 			RECT sbRect;
 			if (!GetWindowRect(g_statusBar, &sbRect))
@@ -1126,10 +1168,11 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			int width = LOWORD(lparam);
 			int height = HIWORD(lparam);
 			MoveWindow(g_topRebar, 0, 0, width, topRebarHeight, true);
-			MoveWindow(g_leftRebar, 0, topRebarHeight, leftRebarWidth, height - topRebarHeight - sbHeight, true);
-			MoveWindow(g_rightRebar, width - rightRebarWidth, topRebarHeight, rightRebarWidth, height - topRebarHeight - sbHeight, true);
+			MoveWindow(g_leftRebar, 0, topRebarHeight, leftRebarWidth, height - topRebarHeight - bottomRebarHeight - sbHeight, true);
+			MoveWindow(g_rightRebar, width - rightRebarWidth, topRebarHeight, rightRebarWidth, height - topRebarHeight - bottomRebarHeight - sbHeight, true);
+			MoveWindow(g_bottomRebar, 0, height - bottomRebarHeight - sbHeight, width, bottomRebarHeight, true);
 			MoveWindow(g_hclientWindow, leftRebarWidth, topRebarHeight,
-				width - leftRebarWidth - rightRebarWidth, height - topRebarHeight - sbHeight, true);
+				width - leftRebarWidth - rightRebarWidth, height - topRebarHeight - bottomRebarHeight - sbHeight, true);
 		}
 		while (false);
 		return 0;
@@ -1202,7 +1245,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE /*hPrevInst*/, LPSTR /*cmdLine*/, 
 	MSG msg;
 	while (GetMessageW(&msg, 0, 0, 0))
 	{
-		TranslateAccelerator(g_hmainWindow, haccel, &msg);
+		if (!TranslateAccelerator(g_hmainWindow, haccel, &msg))
+			TranslateMessage(&msg);
 		DispatchMessageW(&msg);
 	}
 	return msg.wParam;

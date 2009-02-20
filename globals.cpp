@@ -5,6 +5,7 @@
  *      Author: misha
  */
 #include "globals.h"
+#include "console.h"
 #include "exmath.h"
 #include <commctrl.h>
 #include <windowsx.h>
@@ -615,14 +616,14 @@ void MyRectangle(HDC hdc, Point<int> pt1, Point<int> pt2)
 }
 
 
-void Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
 	{
 	case WM_LBUTTONDOWN:
 		m_lassoPt2 = m_lassoPt1 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
 		m_lassoOn = true;
-		break;
+		return true;
 	case WM_MOUSEMOVE:
 		if (m_lassoOn)
 		{
@@ -645,9 +646,11 @@ void Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 				SelectObject(hdc, g_lineHPen);
 			MyRectangle(hdc, scnPt1, scnPt2);
 			m_lassoDrawn = true;
+			return true;
 		}
-		break;
+		return false;
 	case WM_LBUTTONUP:
+	{
 		Rect<double> testRect;
 		bool multiselect;
 		bool intersect;
@@ -717,7 +720,10 @@ void Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 				}
 			}
 		}
-		break;
+		return true;
+	}
+	default:
+		return false;
 	}
 }
 
@@ -734,7 +740,7 @@ void Selector::Cancel()
 		g_selected.clear();
 }
 
-void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+bool DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (m_state)
 	{
@@ -803,20 +809,19 @@ void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 				}
 			}
 			while (false);
-			break;
+			return true;
 		case WM_KEYDOWN:
 			switch (wparam)
 			{
 			case VK_DELETE:
 				DeleteSelectedObjects();
-				break;
+				return true;
+			default:
+				return false;
 			}
-			break;
 		default:
-			g_selector.ProcessInput(hwnd, msg, wparam, lparam);
-			break;
+			return g_selector.ProcessInput(hwnd, msg, wparam, lparam);
 		}
-		break;
 	case MovingManip:
 		switch (msg)
 		{
@@ -844,9 +849,13 @@ void DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 			InvalidateRect(hwnd, 0, true);
 			UpdateWindow(hwnd);
 		}
-			break;
+			return true;
+		default:
+			return false;
 		}
-		break;
+	default:
+		assert(0);
+		return false;
 	}
 }
 
@@ -859,6 +868,7 @@ void DefaultTool::Start(const std::list<CadObject *> & /*selected*/)
 	Functor<void, LOKI_TYPELIST_2(CadObject*,bool)> handler(this, &DefaultTool::SelectHandler);
 	g_selector.SelectHandler = handler;
 	g_canSnap = false;
+	g_console.SetPrompt(L"command:");
 }
 
 
@@ -1027,17 +1037,16 @@ void Zoom(float prevMag, float deltaMag, int hscrollPos, int vscrollPos, int x, 
 }
 
 
-void ZoomTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+bool ZoomTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
 	{
 	case WM_MOUSEMOVE:
-		if (m_zooming)
-		{
-			Zoom(m_startMag, -0.005f * (GET_Y_LPARAM(lparam) - m_startY),
-				m_startHscroll, m_startVscroll, m_vectorX, m_vectorY);
-		}
-		break;
+		if (!m_zooming)
+			return false;
+		Zoom(m_startMag, -0.005f * (GET_Y_LPARAM(lparam) - m_startY),
+			m_startHscroll, m_startVscroll, m_vectorX, m_vectorY);
+		return true;
 	case WM_LBUTTONDOWN:
         SetCapture(hwnd);
         m_startY = GET_Y_LPARAM(lparam);
@@ -1047,11 +1056,13 @@ void ZoomTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
         m_vectorX = GET_X_LPARAM(lparam);
 		m_vectorY = GET_Y_LPARAM(lparam);
         m_zooming = true;
-		break;
+		return true;
 	case WM_LBUTTONUP:
 		SetCapture(0);
 		m_zooming = false;
-		break;
+		return true;
+	default:
+		return false;
 	}
 }
 
@@ -1064,7 +1075,7 @@ void ZoomTool::Start(const std::list<CadObject *> & /*selected*/)
 }
 
 
-void PanTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+bool PanTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
 	{
@@ -1073,7 +1084,7 @@ void PanTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lp
 		m_prevX = GET_X_LPARAM(lparam);
 		m_prevY = GET_Y_LPARAM(lparam);
 		m_panning = true;
-		break;
+		return true;
 	case WM_MOUSEMOVE:
 		if (m_panning)
 		{
@@ -1099,12 +1110,15 @@ void PanTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lp
 			si.nPos = g_vscrollPos;
 			ExtendVScrollLimits(si);
 			SetScrollInfo(hwnd, SB_VERT, &si, true);}
+			return true;
 		}
-		break;
+		return false;
 	case WM_LBUTTONUP:
 		SetCapture(0);
 		m_panning = false;
-		break;
+		return true;
+	default:
+		return false;
 	}
 }
 
@@ -1117,33 +1131,51 @@ void PanTool::Start(const std::list<CadObject *> & /*selected*/)
 }
 
 
-void DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+bool DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
 	{
 	case WM_LBUTTONDOWN:
-		if (m_selectingSecondPoint)
+		FeedPoint(Point<double>(g_cursorWrld));
+		return true;
+	case WM_KEYDOWN:
+		switch (wparam)
 		{
-			g_fantomManager.DeleteFantoms(false);
-			g_undoManager.AddWork(new AddObjectUndoItem(m_fantomLine.release()));
+		case VK_RETURN:
+			ExitTool();
+			return true;
+		default:
+			return false;
 		}
-		else
-		{
-			m_selectingSecondPoint = true;
-		}
-		m_fantomLine.reset(new CadLine());
-		m_fantomLine->Point1 = m_fantomLine->Point2 = g_cursorWrld;
-		g_fantomManager.AddFantom(m_fantomLine.get());
-		g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawLinesTool::RecalcFantomsHandler);
-		InvalidateRect(hwnd, 0, true);
-		break;
+	default:
+		return false;
 	}
 }
 
 
 void DrawLinesTool::RecalcFantomsHandler()
 {
+	if (m_fantomLine.get() != 0)
+		m_fantomLine->Point2 = g_cursorWrld;
+}
+
+
+void DrawLinesTool::FeedPoint(const Point<double> & pt)
+{
+	if (m_points.size() > 0)
+	{
+		g_fantomManager.DeleteFantoms(false);
+		m_fantomLine->Point2 = pt;
+		g_undoManager.AddGroupItem(auto_ptr<UndoItem>(new AddObjectUndoItem(m_fantomLine.release())));
+	}
+	m_points.push_back(pt);
+	UpdatePrompt();
+	m_fantomLine.reset(new CadLine());
+	m_fantomLine->Point1 = pt;
 	m_fantomLine->Point2 = g_cursorWrld;
+	g_fantomManager.AddFantom(m_fantomLine.get());
+	g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawLinesTool::RecalcFantomsHandler);
+	InvalidateRect(g_hclientWindow, 0, true);
 }
 
 
@@ -1153,12 +1185,68 @@ void DrawLinesTool::Start(const std::list<CadObject *> & /*selected*/)
 	g_cursorType = CursorTypeManual;
 	g_cursorHandle = 0;
 	g_customCursorType = CustomCursorTypeCross;
-	m_selectingSecondPoint = false;
 	g_canSnap = true;
+	UpdatePrompt();
 }
 
 
-void DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+void DrawLinesTool::Command(const std::wstring & msg)
+{
+	wstring msgcopy(msg);
+	transform(msgcopy.begin(), msgcopy.end(), msgcopy.begin(), tolower);
+	if (m_points.size() >= 3 && msgcopy == L"c")
+	{
+		FeedPoint(m_points.front());
+		ExitTool();
+		return;
+	}
+	if (m_points.size() >= 1 && msgcopy == L"u")
+	{
+		m_points.pop_back();
+		UpdatePrompt();
+		if (m_points.size() > 0)
+		{
+			g_undoManager.RemoveGroupItem();
+			m_fantomLine->Point1 = m_points.back();
+		}
+		else
+		{
+			g_fantomManager.DeleteFantoms(false);
+			m_fantomLine.reset(0);
+		}
+		InvalidateRect(g_hclientWindow, 0, true);
+		return;
+	}
+	double x, y;
+	if (swscanf(msg.c_str(), L"%lf,%lf", &x, &y) != 2)
+	{
+		g_console.Log(L"Invalid point");
+		return;
+	}
+	FeedPoint(Point<double>(x, y));
+}
+
+
+void DrawLinesTool::Exiting()
+{
+	if (m_points.size() >= 2)
+		g_undoManager.EndGroup();
+	m_points.clear();
+}
+
+
+void DrawLinesTool::UpdatePrompt()
+{
+	if (m_points.size() >= 3)
+		g_console.SetPrompt(L"specify next point or [Close/Undo]:");
+	else if (m_points.size() >= 1)
+		g_console.SetPrompt(L"specify next point or [Undo]:");
+	else
+		g_console.SetPrompt(L"specify first point:");
+}
+
+
+bool DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (m_state)
 	{
@@ -1175,9 +1263,10 @@ void DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LP
 			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawCircleTool::RecalcFantomsHandler);
 			g_fantomManager.AddFantom(m_cadCircle.get());
 			g_fantomManager.AddFantom(m_radiusLine.get());
-			break;
+			return true;
+		default:
+			return false;
 		}
-		break;
 	case StateSelectingRadius:
 		switch (msg)
 		{
@@ -1185,9 +1274,13 @@ void DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LP
 			m_radiusLine.reset(0);
 			g_undoManager.AddWork(new AddObjectUndoItem(m_cadCircle.release()));
 			ExitTool();
-			break;
+			return true;
+		default:
+			return false;
 		}
-		break;
+	default:
+		assert(0);
+		return false;
 	}
 }
 
@@ -1209,7 +1302,7 @@ void DrawCircleTool::Start(const std::list<CadObject *> & selected)
 }
 
 
-void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+bool DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
 	{
@@ -1223,7 +1316,7 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawArcsTool::RecalcFantomsHandler);
 			m_state = StateSelectingSecondPoint;
 			InvalidateRect(hwnd, 0, true);
-			break;
+			return true;
 		case StateSelectingSecondPoint:
 			g_fantomManager.DeleteFantoms(false);
 			m_fantomArc.reset(new CadArc());
@@ -1235,13 +1328,14 @@ void DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawArcsTool::RecalcFantomsHandler);
 			m_state = StateSelectingThirdPoint;
 			InvalidateRect(hwnd, 0, true);
-			break;
+			return true;
 		case StateSelectingThirdPoint:
 			g_undoManager.AddWork(new AddObjectUndoItem(m_fantomArc.release()));
 			ExitTool();
-			break;
+			return true;
 		}
-		break;
+	default:
+		return false;
 	}
 }
 
@@ -1271,7 +1365,7 @@ void DrawArcsTool::RecalcFantomsHandler()
 }
 
 
-void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+bool MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (m_state)
 	{
@@ -1294,15 +1388,12 @@ void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 				}
 				while (false);
 				g_canSnap = true;
-				break;
+				return true;;
 			default:
-				g_selector.ProcessInput(hwnd, msg, wparam, lparam);
-				break;
+				return g_selector.ProcessInput(hwnd, msg, wparam, lparam);
 			}
-			break;
 		default:
-			g_selector.ProcessInput(hwnd, msg, wparam, lparam);
-			break;
+			return g_selector.ProcessInput(hwnd, msg, wparam, lparam);
 		}
 		break;
 	case StateChoosingBasePoint:
@@ -1328,9 +1419,10 @@ void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 				}
 			}
 			while (false);
-			break;
+			return true;
+		default:
+			return false;
 		}
-		break;
 	case StateChoosingDestPoint:
 		switch (msg)
 		{
@@ -1349,12 +1441,13 @@ void MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 				ExitTool();
 			}
 			while (false);
-			break;
+			return true;
+		default:
+			return false;
 		}
-		break;
 	default:
 		assert(0);
-		break;
+		return false;
 	}
 }
 
@@ -1419,7 +1512,7 @@ void MoveTool::RecalcFantomsHandler()
 }
 
 
-void PasteTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+bool PasteTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
 	{
@@ -1437,7 +1530,9 @@ void PasteTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM 
 			ExitTool();
 		}
 		while (false);
-		break;
+		return true;
+	default:
+		return false;
 	}
 }
 
@@ -1663,6 +1758,32 @@ void UndoManager::Redo()
 	(*m_pos)->Do();
 	m_pos++;
 	InvalidateRect(g_hclientWindow, 0, true);
+}
+
+void UndoManager::AddGroupItem(auto_ptr<UndoItem> item)
+{
+	if (m_group.get() == 0)
+		m_group.reset(new GroupUndoItem);
+	item->Do();
+	m_group->AddItem(item.release());
+}
+
+void UndoManager::RemoveGroupItem()
+{
+	assert(m_group.get() != 0);
+	assert(m_group->m_items.size() > 0);
+	m_group->m_items.back()->Undo();
+	delete m_group->m_items.back();
+	m_group->m_items.pop_back();
+}
+
+void UndoManager::EndGroup()
+{
+	assert(m_group.get() != 0);
+	assert(m_group->m_items.size() > 0);
+	DeleteItems(m_pos);
+	m_items.push_back(m_group.release());
+	m_pos = m_items.end();
 }
 
 void UndoManager::DeleteItems(Items::iterator pos)
