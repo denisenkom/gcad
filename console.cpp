@@ -45,7 +45,7 @@ LRESULT CALLBACK Console::WndProc(HWND hwnd, unsigned int msg, WPARAM wparam, LP
 			if (!GetTextMetrics(hdc, &tm))
 				assert(0);
 			m_lineHeight = tm.tmHeight + tm.tmExternalLeading;
-			m_minHeight = m_lineHeight * 3 + 1;
+			m_minHeight = m_lineHeight * 5 + 1;
 			if (!GetTextExtentPoint32W(hdc, m_prompt.c_str(), m_prompt.size(), &m_promptSize))
 				assert(0);
 			m_histWnd = CreateWindowExW(0, L"EDIT", 0, WS_CHILD |
@@ -162,7 +162,7 @@ LRESULT CALLBACK Console::EditWndProc(HWND hwnd, unsigned int msg, WPARAM wparam
 			m_pos = m_end;
 			if (!SetWindowTextW(m_editWnd, L""))
 				assert(0);
-			Log(m_prompt + text);
+			LogCommand(text);
 			g_curTool->Command(text);
 		}
 			return 0;
@@ -221,9 +221,34 @@ void Console::Log(const wstring & str)
 }
 
 
+void Console::LogCommand(const wstring & cmd)
+{
+	Log(m_prompt + cmd);
+}
+
+
 bool Console::HasInput()
 {
 	return GetWindowTextLength(m_editWnd) > 0;
+}
+
+
+wstring Console::GetInput()
+{
+	int length = GetWindowTextLength(m_editWnd);
+	if (length == 0)
+		return wstring();
+	wchar_t * textbuf = new wchar_t[length + 1];
+	if (GetWindowTextW(m_editWnd, textbuf, length + 1) == 0)
+		assert(0);
+	return wstring(textbuf, length);
+}
+
+
+void Console::ClearInput()
+{
+	if (!SetWindowTextW(m_editWnd, L""))
+		assert(0);
 }
 
 

@@ -208,6 +208,7 @@ public:
 	void DrawManipulators(HDC hdc);
 	virtual void Cancel();
 	virtual void Exiting();
+	virtual void Command(const std::wstring & cmd);
 	void RemoveManipulators(CadObject * obj);
 private:
 	enum State {Selecting, MovingManip};
@@ -685,5 +686,7 @@ void ReadPtr(unsigned char const * &ptr, T & val, size_t & size)
 }
 
 void DeleteSelectedObjects();
+void ExecuteCommand(const std::wstring & cmd);
+void Cancel();
 
 #endif /* GLOBALS_H_ */

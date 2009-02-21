@@ -23,7 +23,10 @@ public:
 	// only for Client window message forwarding
 	LRESULT Input(unsigned int msg, WPARAM wparam, LPARAM lparam);
 	void Log(const std::wstring & str);
+	void LogCommand(const std::wstring & cmd = std::wstring());
 	bool HasInput();
+	std::wstring GetInput();
+	void ClearInput();
 private:
 	HWND m_handle;
 	HWND m_histWnd;

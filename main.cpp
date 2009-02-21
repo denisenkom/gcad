@@ -565,10 +565,8 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 			assert(0);
 			break;
 		}
-		if (g_curTool->ProcessInput(hwnd, msg, wparam, lparam))
-			return 0;
-		else
-			return DefWindowProc(hwnd, msg, wparam, lparam);
+		g_curTool->ProcessInput(hwnd, msg, wparam, lparam);
+		return 0;
 	case WM_MOUSELEAVE:
 		g_mouseInsideClient = false;
 		switch (g_cursorType)
@@ -594,18 +592,19 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 			assert(0);
 			return DefWindowProc(hwnd, msg, wparam, lparam);
 		}
+	case WM_LBUTTONDOWN:
+		if (!g_console.HasInput())
+			g_curTool->ProcessInput(hwnd, msg, wparam, lparam);
+		return 0;
+	case WM_LBUTTONUP:
+		if (!g_console.HasInput())
+			g_curTool->ProcessInput(hwnd, msg, wparam, lparam);
+		return 0;
 	case WM_KEYDOWN:
 		switch (wparam)
 		{
 		case VK_ESCAPE:
-			g_fantomManager.DeleteFantoms(false);
-			g_curTool->Cancel();
-			if (g_curTool != &g_defaultTool)
-			{
-				g_curTool = &g_defaultTool;
-				g_curTool->Start(list<CadObject *>());
-			}
-			InvalidateRect(hwnd, 0, true);
+			Cancel();
 			UpdateWindow(hwnd);
 			return 0;
 		case VK_RETURN:
@@ -629,10 +628,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 	case WM_CHAR:
 		return g_console.Input(msg, wparam, lparam);
 	default:
-		if (g_curTool->ProcessInput(hwnd, msg, wparam, lparam))
-			return 0;
-		else
-			return DefWindowProc(hwnd, msg, wparam, lparam);
+		return DefWindowProc(hwnd, msg, wparam, lparam);
 
 	}
 }
@@ -1103,19 +1099,29 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			while (false);
 			return 0;
 		case ID_EDIT_UNDO:
-			g_undoManager.Undo();
+			ExecuteCommand(L"u");
 			break;
 		case ID_EDIT_REDO:
-			g_undoManager.Redo();
+			ExecuteCommand(L"mredo");
 			break;
 		case ID_VIEW_PAN:
+			ExecuteCommand(L"pan");
+			break;
 		case ID_VIEW_ZOOM:
+			ExecuteCommand(L"zoom");
+			break;
 		case ID_DRAW_LINES:
+			ExecuteCommand(L"line");
+			break;
 		case ID_DRAW_CIRCLE:
+			ExecuteCommand(L"circle");
+			break;
 		case ID_DRAW_ARCS:
+			ExecuteCommand(L"arc");
+			break;
 		case ID_MODIFY_MOVE:
-			SelectTool(LOWORD(wparam));
-			return 0;
+			ExecuteCommand(L"move");
+			break;
 		case ID_EDIT_CUT:
 		case ID_EDIT_COPY:
 			if (g_selected.size() != 0)
@@ -1152,7 +1158,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			}
 			return 0;
 		case ID_EDIT_PASTE:
-			SelectTool(ID_EDIT_PASTE);
+			ExecuteCommand(L"pasteclip");
 			break;
 		}
 		break;

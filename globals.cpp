@@ -69,6 +69,10 @@ bool g_canSnap = false;
 
 std::list<CadObject *> g_selected;
 
+
+static void DispatchCommand(const wstring & cmd);
+
+
 void DrawCursorRaw(HDC hdc, int x, int y)
 {
 	// TODO: make dpi dependent
@@ -910,6 +914,19 @@ void DefaultTool::Exiting()
 }
 
 
+void DefaultTool::Command(const wstring & cmd)
+{
+	switch (m_state)
+	{
+	case Selecting:
+		DispatchCommand(cmd);
+		break;
+	case MovingManip:
+		break;
+	}
+}
+
+
 void DefaultTool::SelectHandler(CadObject * obj, bool select)
 {
 	if (select)
@@ -1136,6 +1153,7 @@ bool DrawLinesTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPA
 	switch (msg)
 	{
 	case WM_LBUTTONDOWN:
+		g_console.LogCommand();
 		FeedPoint(Point<double>(g_cursorWrld));
 		return true;
 	case WM_KEYDOWN:
@@ -1809,4 +1827,60 @@ void DeleteSelectedObjects()
 		g_undoManager.AddWork(new ReverseUndoItem(group.release()));
 		InvalidateRect(g_hclientWindow, 0, true);
 	}
+}
+
+
+static void DispatchCommand(const wstring & cmd)
+{
+	size_t start = cmd.find_first_not_of(L"_.");
+	if (start == wstring::npos)
+		start = cmd.size();
+	wstring cmdreal(cmd, start);
+	transform(cmdreal.begin(), cmdreal.end(), cmdreal.begin(), tolower);
+	if (cmdreal == L"line")
+		SelectTool(ID_DRAW_LINES);
+	else if (cmdreal == L"arc")
+		SelectTool(ID_DRAW_ARCS);
+	else if (cmdreal == L"circle")
+		SelectTool(ID_DRAW_CIRCLE);
+	else if (cmdreal == L"pan")
+		SelectTool(ID_VIEW_PAN);
+	else if (cmdreal == L"zoom")
+		SelectTool(ID_VIEW_ZOOM);
+	else if (cmdreal == L"move")
+		SelectTool(ID_MODIFY_MOVE);
+	else if (cmdreal == L"u" || cmdreal == L"undo")
+		g_undoManager.Undo();
+	else if (cmdreal == L"mredo")
+		g_undoManager.Redo();
+	else if (cmdreal == L"pasteclip")
+		SelectTool(ID_EDIT_PASTE);
+	else
+		g_console.Log(L"unknown command: '" + cmdreal + L"'");
+}
+
+
+void ExecuteCommand(const wstring & cmd)
+{
+	if (g_curTool != &g_defaultTool)
+		Cancel();
+	else
+		g_console.ClearInput();
+	g_console.LogCommand(cmd);
+	DispatchCommand(cmd);
+}
+
+
+void Cancel()
+{
+	g_console.LogCommand(g_console.GetInput() + L"*cancel*");
+	g_console.ClearInput();
+	g_fantomManager.DeleteFantoms(false);
+	g_curTool->Cancel();
+	if (g_curTool != &g_defaultTool)
+	{
+		g_curTool = &g_defaultTool;
+		g_defaultTool.Start(list<CadObject *>());
+	}
+	InvalidateRect(g_hclientWindow, 0, true);
 }
