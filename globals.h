@@ -318,6 +318,7 @@ class DrawArcsTool : public Tool
 public:
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Command(const std::wstring & cmd);
 private:
 	enum State
 	{
@@ -330,6 +331,10 @@ private:
 	Point<double> m_secondPoint;
 	std::auto_ptr<CadArc> m_fantomArc;
 	void RecalcFantomsHandler();
+	void FeedFirstPoint(const Point<double> & pt);
+	void FeedSecondPoint(const Point<double> & pt);
+	void FeedThirdPoint(const Point<double> & pt);
+	void CalcArcFrom3Pt(const Point<double> & thirdPoint);
 };
 
 

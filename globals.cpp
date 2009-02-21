@@ -370,15 +370,7 @@ void CadArc::Draw(HDC hdc, bool selected) const
 		assert(0);
 	if (SetBkColor(hdc, RGB(0, 0, 0)) == CLR_INVALID)
 		assert(0);
-	if (Radius == 0)
-	{
-		Point<int> startScn = WorldToScreen(Start);
-		Point<int> endScn = WorldToScreen(End);
-		MoveToEx(hdc, startScn.X, startScn.Y, 0);
-		LineTo(hdc, endScn.X, endScn.Y);
-		LineTo(hdc, endScn.X + 1, endScn.Y);
-	}
-	else
+	if (Radius != 0)
 	{
 		Point<int> center = WorldToScreen(Center);
 		Point<int> start = WorldToScreen(Start);
@@ -1618,28 +1610,16 @@ bool DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 		switch (m_state)
 		{
 		case StateSelectingFirstPoint:
-			m_fantomLine.reset(new CadLine());
-			m_fantomLine->Point1 = m_fantomLine->Point2 = g_cursorWrld;
-			g_fantomManager.AddFantom(m_fantomLine.get());
-			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawArcsTool::RecalcFantomsHandler);
-			m_state = StateSelectingSecondPoint;
-			InvalidateRect(hwnd, 0, true);
+			g_console.LogCommand();
+			FeedFirstPoint(g_cursorWrld);
 			return true;
 		case StateSelectingSecondPoint:
-			g_fantomManager.DeleteFantoms(false);
-			m_fantomArc.reset(new CadArc());
-			m_fantomArc->Start = m_fantomLine->Point1;
-			m_fantomArc->End = m_secondPoint = m_fantomLine->Point2;
-			m_fantomArc->Radius = 0;
-			m_fantomLine.reset(0);
-			g_fantomManager.AddFantom(m_fantomArc.get());
-			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawArcsTool::RecalcFantomsHandler);
-			m_state = StateSelectingThirdPoint;
-			InvalidateRect(hwnd, 0, true);
+			g_console.LogCommand();
+			FeedSecondPoint(g_cursorWrld);
 			return true;
 		case StateSelectingThirdPoint:
-			g_undoManager.AddWork(new AddObjectUndoItem(m_fantomArc.release()));
-			ExitTool();
+			g_console.LogCommand();
+			FeedThirdPoint(g_cursorWrld);
 			return true;
 		}
 	default:
@@ -1655,6 +1635,29 @@ void DrawArcsTool::Start(const std::list<CadObject *> & /*selected*/)
 	g_customCursorType = CustomCursorTypeCross;
 	m_state = StateSelectingFirstPoint;
 	g_canSnap = true;
+	g_console.SetPrompt(L"Specify first point of arc:");
+	g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawArcsTool::RecalcFantomsHandler);
+}
+
+
+void DrawArcsTool::Command(const wstring & cmd)
+{
+	Point<double> pt;
+	switch (m_state)
+	{
+	case StateSelectingFirstPoint:
+		if (ParsePoint2D(cmd, pt))
+			FeedFirstPoint(pt);
+		break;
+	case StateSelectingSecondPoint:
+		if (ParsePoint2D(cmd, pt))
+			FeedSecondPoint(pt);
+		break;
+	case StateSelectingThirdPoint:
+		if (ParsePoint2D(cmd, pt))
+			FeedThirdPoint(pt);
+		break;
+	}
 }
 
 
@@ -1663,13 +1666,62 @@ void DrawArcsTool::RecalcFantomsHandler()
 	if (m_fantomLine.get())
 		m_fantomLine->Point2 = g_cursorWrld;
 	if (m_fantomArc.get())
+		CalcArcFrom3Pt(g_cursorWrld);
+}
+
+
+void DrawArcsTool::FeedFirstPoint(const Point<double> & pt)
+{
+	m_fantomLine.reset(new CadLine());
+	m_fantomLine->Point1 = pt;
+	m_fantomLine->Point2 = g_cursorWrld;
+	g_fantomManager.AddFantom(m_fantomLine.get());
+	m_state = StateSelectingSecondPoint;
+	g_console.SetPrompt(L"Specify second point of arc:");
+	InvalidateRect(g_hclientWindow, 0, true);
+}
+
+
+void DrawArcsTool::FeedSecondPoint(const Point<double> & pt)
+{
+	if (m_fantomLine->Point1 == pt)
 	{
-		CircleArc<double> arc = ArcFrom3Pt(m_fantomArc->Start, m_secondPoint, g_cursorWrld);
-		m_fantomArc->Center = arc.Center;
-		m_fantomArc->End = g_cursorWrld;
-		m_fantomArc->Ccw = arc.Ccw;
-		m_fantomArc->Radius = arc.Radius;
+		g_console.Log(L"Points must be different");
+		return;
 	}
+	g_fantomManager.DeleteFantoms(false);
+	m_fantomArc.reset(new CadArc());
+	m_fantomArc->Start = m_fantomLine->Point1;
+	m_fantomArc->End = m_secondPoint = pt;
+	m_fantomArc->Radius = 0;
+	m_fantomLine.reset(0);
+	g_fantomManager.AddFantom(m_fantomArc.get());
+	m_state = StateSelectingThirdPoint;
+	g_console.SetPrompt(L"Specify third point of arc:");
+	InvalidateRect(g_hclientWindow, 0, true);
+}
+
+
+void DrawArcsTool::FeedThirdPoint(const Point<double> & pt)
+{
+	CalcArcFrom3Pt(pt);
+	if (m_fantomArc->Radius == 0)
+	{
+		g_console.Log(L"Invalid arc");
+		return;
+	}
+	g_undoManager.AddWork(new AddObjectUndoItem(m_fantomArc.release()));
+	ExitTool();
+}
+
+
+void DrawArcsTool::CalcArcFrom3Pt(const Point<double> & thirdPoint)
+{
+	CircleArc<double> arc = ArcFrom3Pt(m_fantomArc->Start, m_secondPoint, thirdPoint);
+	m_fantomArc->Center = arc.Center;
+	m_fantomArc->End = thirdPoint;
+	m_fantomArc->Ccw = arc.Ccw;
+	m_fantomArc->Radius = arc.Straight ? 0 : arc.Radius;
 }
 
 
