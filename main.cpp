@@ -1123,40 +1123,11 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			ExecuteCommand(L"move");
 			break;
 		case ID_EDIT_CUT:
+			ExecuteCommand(L"cutclip");
+			break;
 		case ID_EDIT_COPY:
-			if (g_selected.size() != 0)
-			{
-				if (OpenClipboard(hwnd))
-				{
-					if (!EmptyClipboard())
-						assert(0);
-					size_t totalSize = 0;
-					for (list<CadObject *>::const_iterator i = g_selected.begin();
-						i != g_selected.end(); i++)
-					{
-						totalSize += (*i)->Serialize(0);
-					}
-					HGLOBAL hglob = GlobalAlloc(GMEM_MOVEABLE, totalSize);
-					assert(hglob);
-					unsigned char * pmem = reinterpret_cast<unsigned char *>(GlobalLock(hglob));
-					unsigned char * ptr = pmem;
-					assert(pmem);
-					for (list<CadObject *>::const_iterator i = g_selected.begin();
-						i != g_selected.end(); i++)
-					{
-						ptr += (*i)->Serialize(ptr);
-					}
-					if (!GlobalUnlock(hglob))
-						assert(GetLastError() == NO_ERROR);
-					if (!SetClipboardData(g_clipboardFormat, hglob))
-						assert(0);
-					if (!CloseClipboard())
-						assert(0);
-					if (LOWORD(wparam) == ID_EDIT_CUT)
-						DeleteSelectedObjects();
-				}
-			}
-			return 0;
+			ExecuteCommand(L"copyclip");
+			break;
 		case ID_EDIT_PASTE:
 			ExecuteCommand(L"pasteclip");
 			break;

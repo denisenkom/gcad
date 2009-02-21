@@ -378,6 +378,22 @@ private:
 };
 
 
+class CopyTool : public Tool
+{
+public:
+	virtual void Start();
+protected:
+	bool InternalStart();
+};
+
+
+class CutTool : public CopyTool
+{
+public:
+	virtual void Start();
+};
+
+
 class PasteTool : public Tool
 {
 public:

@@ -1870,6 +1870,64 @@ void MoveTool::FeedDestPoint(const Point<double> & pt)
 }
 
 
+REGISTER_TOOL(L"copyclip", CopyTool, true);
+
+
+void CopyTool::Start()
+{
+	InternalStart();
+	g_selected.clear();
+	ExitTool();
+}
+
+
+bool CopyTool::InternalStart()
+{
+	if (!OpenClipboard(g_hmainWindow))
+	{
+		g_console.Log(L"Unable to open clipboard");
+		return false;
+	}
+	if (!EmptyClipboard())
+		assert(0);
+	size_t totalSize = 0;
+	for (list<CadObject *>::const_iterator i = g_selected.begin();
+		i != g_selected.end(); i++)
+	{
+		totalSize += (*i)->Serialize(0);
+	}
+	HGLOBAL hglob = GlobalAlloc(GMEM_MOVEABLE, totalSize);
+	assert(hglob);
+	unsigned char * pmem = reinterpret_cast<unsigned char *>(GlobalLock(hglob));
+	unsigned char * ptr = pmem;
+	assert(pmem);
+	for (list<CadObject *>::const_iterator i = g_selected.begin();
+		i != g_selected.end(); i++)
+	{
+		ptr += (*i)->Serialize(ptr);
+	}
+	if (!GlobalUnlock(hglob))
+		assert(GetLastError() == NO_ERROR);
+	if (!SetClipboardData(g_clipboardFormat, hglob))
+		assert(0);
+	if (!CloseClipboard())
+		assert(0);
+	return true;
+}
+
+
+REGISTER_TOOL(L"cutclip", CutTool, true);
+
+
+void CutTool::Start()
+{
+	if (InternalStart())
+		DeleteSelectedObjects();
+	g_selected.clear();
+	ExitTool();
+}
+
+
 REGISTER_TOOL(L"pasteclip", PasteTool, false);
 
 
