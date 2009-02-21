@@ -1877,19 +1877,8 @@ bool PasteTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM 
 	switch (msg)
 	{
 	case WM_LBUTTONUP:
-		do
-		{
-			auto_ptr<GroupUndoItem> group(new GroupUndoItem);
-			for (vector<CadObject*>::iterator i = m_objects.begin();
-				i != m_objects.end(); i++)
-			{
-				group->AddItem(new AddObjectUndoItem(*i));
-				*i = 0;
-			}
-			g_undoManager.AddWork(group.release());
-			ExitTool();
-		}
-		while (false);
+		g_console.LogCommand();
+		FeedInsertionPoint(g_cursorWrld);
 		return true;
 	default:
 		return false;
@@ -1932,7 +1921,8 @@ void PasteTool::Start(const std::list<CadObject *> & /*selected*/)
 		}
 		g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &PasteTool::RecalcFantomsHandler);
 		// aligning base point of objects with cursor
-		RecalcFantomsHandler();
+		CalcPositions(g_cursorWrld);
+		g_console.SetPrompt(L"Specify base point:");
 	}
 	else
 	{
@@ -1943,9 +1933,11 @@ void PasteTool::Start(const std::list<CadObject *> & /*selected*/)
 }
 
 
-void PasteTool::Cancel()
+void PasteTool::Command(const wstring & cmd)
 {
-	Exiting();
+	Point<double> pt;
+	if (ParsePoint2D(cmd, pt))
+		FeedInsertionPoint(pt);
 }
 
 
@@ -1968,12 +1960,33 @@ void PasteTool::DeleteCopies()
 
 void PasteTool::RecalcFantomsHandler()
 {
+	CalcPositions(g_cursorWrld);
+}
+
+
+void PasteTool::CalcPositions(const Point<double> & pt)
+{
 	for (vector<CadObject*>::iterator i = m_objects.begin();
 		i != m_objects.end(); i++)
 	{
-		(*i)->Move(g_cursorWrld - m_basePoint);
+		(*i)->Move(pt - m_basePoint);
 	}
-	m_basePoint = g_cursorWrld;
+	m_basePoint = pt;
+}
+
+
+void PasteTool::FeedInsertionPoint(const Point<double> & pt)
+{
+	CalcPositions(pt);
+	auto_ptr<GroupUndoItem> group(new GroupUndoItem);
+	for (vector<CadObject*>::iterator i = m_objects.begin();
+		i != m_objects.end(); i++)
+	{
+		group->AddItem(new AddObjectUndoItem(*i));
+		*i = 0;
+	}
+	g_undoManager.AddWork(group.release());
+	ExitTool();
 }
 
 

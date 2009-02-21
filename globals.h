@@ -366,13 +366,15 @@ class PasteTool : public Tool
 public:
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
-	virtual void Cancel();
+	virtual void Command(const std::wstring & cmd);
 	virtual void Exiting();
 private:
 	Point<double> m_basePoint;
 	std::vector<CadObject *> m_objects;
 	void DeleteCopies();
 	void RecalcFantomsHandler();
+	void CalcPositions(const Point<double> & pt);
+	void FeedInsertionPoint(const Point<double> & pt);
 };
 
 
