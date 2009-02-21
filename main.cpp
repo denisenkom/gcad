@@ -168,44 +168,47 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 		}
 		return 0;
 	case WM_SIZE:
-		{
+	{
+		int prevHeight = g_viewHeight;
+		int prevWidth = g_viewWidth;
 		g_viewHeight = HIWORD(lparam);
 		g_viewWidth = LOWORD(lparam);
 
-		{SCROLLINFO si;
-		si.cbSize = sizeof(si);
-		si.fMask = SIF_PAGE | SIF_DISABLENOSCROLL;
-		si.nPage = g_viewHeight;
-		ExtendVScrollLimits(si);
-		/*if (g_viewHeight >= g_vscrollMax - g_vscrollMin + 1)
+		static bool firstTime = true;
+		bool clearFirstTime = false;
+		if (firstTime && (g_viewHeight != 0 || g_viewWidth != 0))
 		{
-			si.fMask |= SIF_POS;
-			si.nPos = g_vscrollPos = (g_vscrollMax - g_vscrollMin + 1 - g_viewHeight) / 2;
+			clearFirstTime = true;
+			firstTime = false;
 		}
-		else if (g_vscrollPos > g_vscrollMax - g_viewHeight + 1)
 		{
+			SCROLLINFO si;
+			si.cbSize = sizeof(si);
+			si.fMask = SIF_PAGE | SIF_DISABLENOSCROLL;
+			si.nPage = g_viewHeight;
+			ExtendVScrollLimits(si);
 			si.fMask |= SIF_POS;
-			si.nPos = g_vscrollPos = g_vscrollMax - g_viewHeight + 1;
-		}*/
-		SetScrollInfo(hwnd, SB_VERT, &si, true);}
+			if (clearFirstTime)
+				si.nPos = g_vscrollPos = g_vscrollMax - g_viewHeight + 1;
+			else
+				si.nPos = g_vscrollPos = g_vscrollPos + prevHeight / 2 - g_viewHeight / 2;
+			SetScrollInfo(hwnd, SB_VERT, &si, true);
+		}
 
-		{SCROLLINFO si;
-		si.cbSize = sizeof(si);
-		si.fMask = SIF_PAGE | SIF_DISABLENOSCROLL;
-		si.nPage = g_viewWidth;
-		ExtendHScrollLimits(si);
-		/*if (g_viewWidth >= g_hscrollMax - g_hscrollMin + 1)
 		{
+			SCROLLINFO si;
+			si.cbSize = sizeof(si);
+			si.fMask = SIF_PAGE | SIF_POS | SIF_DISABLENOSCROLL;
+			si.nPage = g_viewWidth;
+			ExtendHScrollLimits(si);
 			si.fMask |= SIF_POS;
-			si.nPos = g_hscrollPos = (g_hscrollMax - g_hscrollMin + 1 - g_viewWidth) / 2;
+			if (clearFirstTime)
+				si.nPos = g_hscrollPos = 0;
+			else
+				si.nPos = g_hscrollPos = g_hscrollPos + prevWidth / 2 - g_viewWidth / 2;
+			SetScrollInfo(hwnd, SB_HORZ, &si, true);
 		}
-		else if (g_hscrollPos > g_hscrollMax - g_viewWidth + 1)
-		{
-			si.fMask |= SIF_POS;
-			si.nPos = g_hscrollPos = g_hscrollMax - g_viewWidth + 1;
-		}*/
-		SetScrollInfo(hwnd, SB_HORZ, &si, true);}
-		}
+	}
 		return 0;
 	case WM_VSCROLL:
 		{

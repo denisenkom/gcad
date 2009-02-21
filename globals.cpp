@@ -34,12 +34,12 @@ int g_vrangeMin = static_cast<int>(g_extentMin.Y * g_magification);
 int g_vrangeMax = static_cast<int>(g_extentMax.Y * g_magification);
 int g_vscrollMin = g_vrangeMin;
 int g_vscrollMax = g_vrangeMax;
-int g_vscrollPos = g_vscrollMin;
+int g_vscrollPos;
 int g_hrangeMin = static_cast<int>(g_extentMin.X * g_magification);
 int g_hrangeMax = static_cast<int>(g_extentMax.X * g_magification);
 int g_hscrollMin = g_hrangeMin;
 int g_hscrollMax = g_hrangeMax;
-int g_hscrollPos = g_hscrollMin;
+int g_hscrollPos;
 
 CursorType g_cursorType = CursorTypeManual;
 CustomCursorType g_customCursorType = CustomCursorTypeSelect;
