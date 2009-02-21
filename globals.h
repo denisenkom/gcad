@@ -530,19 +530,6 @@ extern FantomManager g_fantomManager;
 
 extern UndoManager g_undoManager;
 
-const ToolInfo TOOLS[] = {
-	{ID_VIEW_SELECT, g_defaultTool},
-	{ID_VIEW_PAN, g_panTool},
-	{ID_VIEW_ZOOM, g_zoomTool},
-	{ID_DRAW_LINES, g_drawLinesTool},
-	{ID_DRAW_CIRCLE, g_drawCircleTool},
-	{ID_DRAW_ARCS, g_drawArcsTool},
-	{ID_MODIFY_MOVE, g_moveTool},
-	{ID_EDIT_PASTE, g_pasteTool},
-};
-const int NUM_TOOLS = sizeof(TOOLS) / sizeof(TOOLS[0]);
-
-
 const wchar_t MAINWNDCLASS[] = L"GCadMainWindow";
 const wchar_t MAINCLIENTCLASS[] = L"GCadClientWindow";
 
@@ -645,17 +632,6 @@ void Zoom(float prevMag, float deltaMag, int hscrollPos, int vscrollPos, int x, 
 void ExtendHScrollLimits(SCROLLINFO & si);
 void ExtendVScrollLimits(SCROLLINFO & si);
 
-inline const ToolInfo & ToolById(int id)
-{
-	for (int i = 0; i < NUM_TOOLS; i++)
-	{
-		if (TOOLS[i].Id == id)
-			return TOOLS[i];
-	}
-	assert(0);
-}
-
-void SelectTool(int toolId);
 void ExitTool();
 
 void DrawObjectSnap(HDC hdc, Point<int> pos, PointType type);

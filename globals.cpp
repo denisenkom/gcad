@@ -571,14 +571,11 @@ void ExtendVScrollLimits(SCROLLINFO & si)
 }
 
 
-void SelectTool(int toolId)
+void SelectTool(Tool * tool)
 {
-	const ToolInfo & toolInfo = ToolById(toolId);
-	list<CadObject *> selected;
-	if (g_curTool == &g_defaultTool)
-		selected = g_selected;
-	g_curTool->Exiting();
-	g_curTool = &toolInfo.Tool;
+	list<CadObject *> selected = g_selected;
+	g_defaultTool.Exiting();
+	g_curTool = tool;
 	g_curTool->Start(selected);
 	InvalidateRect(g_hclientWindow, 0, true);
 	UpdateWindow(g_hclientWindow);
@@ -591,7 +588,7 @@ void ExitTool()
 	g_fantomManager.RecalcFantomsHandler = Functor<void>();
 	g_curTool->Exiting();
 	g_curTool = &g_defaultTool;
-	g_curTool->Start(list<CadObject*>());
+	g_defaultTool.Start(list<CadObject*>());
 	InvalidateRect(g_hclientWindow, 0, true);
 	UpdateWindow(g_hclientWindow);
 }
@@ -1838,23 +1835,23 @@ static void DispatchCommand(const wstring & cmd)
 	wstring cmdreal(cmd, start);
 	transform(cmdreal.begin(), cmdreal.end(), cmdreal.begin(), tolower);
 	if (cmdreal == L"line")
-		SelectTool(ID_DRAW_LINES);
+		SelectTool(&g_drawLinesTool);
 	else if (cmdreal == L"arc")
-		SelectTool(ID_DRAW_ARCS);
+		SelectTool(&g_drawArcsTool);
 	else if (cmdreal == L"circle")
-		SelectTool(ID_DRAW_CIRCLE);
+		SelectTool(&g_drawCircleTool);
 	else if (cmdreal == L"pan")
-		SelectTool(ID_VIEW_PAN);
+		SelectTool(&g_panTool);
 	else if (cmdreal == L"zoom")
-		SelectTool(ID_VIEW_ZOOM);
+		SelectTool(&g_zoomTool);
 	else if (cmdreal == L"move")
-		SelectTool(ID_MODIFY_MOVE);
+		SelectTool(&g_moveTool);
 	else if (cmdreal == L"u" || cmdreal == L"undo")
 		g_undoManager.Undo();
 	else if (cmdreal == L"mredo")
 		g_undoManager.Redo();
 	else if (cmdreal == L"pasteclip")
-		SelectTool(ID_EDIT_PASTE);
+		SelectTool(&g_pasteTool);
 	else
 		g_console.Log(L"unknown command: '" + cmdreal + L"'");
 }
