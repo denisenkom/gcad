@@ -358,6 +358,7 @@ class MoveTool : public Tool
 public:
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start();
+	virtual void Command(const std::wstring & cmd);
 	virtual void Exiting();
 private:
 	enum State
@@ -371,6 +372,9 @@ private:
 	std::auto_ptr<CadLine> m_fantomLine;
 	void DeleteCopies();
 	void RecalcFantomsHandler();
+	void CalcPositions(const Point<double> & pt);
+	void FeedBasePoint(const Point<double> & pt);
+	void FeedDestPoint(const Point<double> & pt);
 };
 
 

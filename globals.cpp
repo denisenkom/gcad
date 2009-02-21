@@ -700,6 +700,12 @@ bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 		case VK_RETURN:
 			if (NextTool == 0)
 				return false;
+			g_console.LogCommand();
+			if (g_selected.size() == 0)
+			{
+				ExitTool();
+				return true;
+			}
 			g_curTool = NextTool;
 			NextTool->Start();
 			InvalidateRect(hwnd, 0, true);
@@ -1739,25 +1745,8 @@ bool MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 		switch (msg)
 		{
 		case WM_LBUTTONUP:
-			m_basePoint = g_cursorWrld;
-			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &MoveTool::RecalcFantomsHandler);
-			m_fantomLine.reset(new CadLine());
-			m_fantomLine->Point1 = m_fantomLine->Point2 = m_basePoint;
-			g_fantomManager.AddFantom(m_fantomLine.get());
-			m_state = StateChoosingDestPoint;
-			DeleteCopies();
-			m_objects.resize(g_selected.size());
-			do
-			{
-				int no = 0;
-				for (list<CadObject*>::iterator i = g_selected.begin();
-					i != g_selected.end(); i++, no++)
-				{
-					m_objects[no] = (*i)->Clone();
-					g_fantomManager.AddFantom(m_objects[no]);
-				}
-			}
-			while (false);
+			g_console.LogCommand();
+			FeedBasePoint(g_cursorWrld);
 			return true;
 		default:
 			return false;
@@ -1766,20 +1755,8 @@ bool MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 		switch (msg)
 		{
 		case WM_LBUTTONUP:
-			do
-			{
-				auto_ptr<GroupUndoItem> group(new GroupUndoItem);
-				int no = 0;
-				for (list<CadObject*>::iterator i = g_selected.begin();
-					i != g_selected.end(); i++, no++)
-				{
-					group->AddItem(new AssignObjectUndoItem(*i, m_objects[no]));
-					m_objects[no] = 0;
-				}
-				g_undoManager.AddWork(group.release());
-				ExitTool();
-			}
-			while (false);
+			g_console.LogCommand();
+			FeedDestPoint(g_cursorWrld);
 			return true;
 		default:
 			return false;
@@ -1799,6 +1776,24 @@ void MoveTool::Start()
 	g_cursorHandle = 0;
 	g_customCursorType = CustomCursorTypeCross;
 	g_canSnap = true;
+	g_console.SetPrompt(L"Specify base point:");
+}
+
+
+void MoveTool::Command(const wstring & cmd)
+{
+	Point<double> pt;
+	switch (m_state)
+	{
+	case StateChoosingBasePoint:
+		if (ParsePoint2D(cmd, pt))
+			FeedBasePoint(pt);
+		break;
+	case StateChoosingDestPoint:
+		if (ParsePoint2D(cmd, pt))
+			FeedDestPoint(pt);
+		break;
+	}
 }
 
 
@@ -1823,16 +1818,59 @@ void MoveTool::DeleteCopies()
 
 void MoveTool::RecalcFantomsHandler()
 {
-	for (vector<CadObject*>::iterator i = m_objects.begin();
-		i != m_objects.end(); i++)
-	{
-		(*i)->Move(g_cursorWrld - m_basePoint);
-	}
-	m_basePoint = g_cursorWrld;
+	CalcPositions(g_cursorWrld);
 }
 
 
-REGISTER_TOOL(L"paste", PasteTool, false);
+void MoveTool::CalcPositions(const Point<double> & pt)
+{
+	for (vector<CadObject*>::iterator i = m_objects.begin();
+		i != m_objects.end(); i++)
+	{
+		(*i)->Move(pt - m_basePoint);
+	}
+	m_basePoint = pt;
+}
+
+
+void MoveTool::FeedBasePoint(const Point<double> & pt)
+{
+	m_basePoint = pt;
+	g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &MoveTool::RecalcFantomsHandler);
+	m_fantomLine.reset(new CadLine());
+	m_fantomLine->Point1 = m_fantomLine->Point2 = m_basePoint;
+	g_fantomManager.AddFantom(m_fantomLine.get());
+	m_state = StateChoosingDestPoint;
+	DeleteCopies();
+	m_objects.resize(g_selected.size());
+	int no = 0;
+	for (list<CadObject*>::iterator i = g_selected.begin();
+		i != g_selected.end(); i++, no++)
+	{
+		m_objects[no] = (*i)->Clone();
+		g_fantomManager.AddFantom(m_objects[no]);
+	}
+	g_console.SetPrompt(L"Specify insertion point:");
+}
+
+
+void MoveTool::FeedDestPoint(const Point<double> & pt)
+{
+	CalcPositions(pt);
+	auto_ptr<GroupUndoItem> group(new GroupUndoItem);
+	int no = 0;
+	for (list<CadObject*>::iterator i = g_selected.begin();
+		i != g_selected.end(); i++, no++)
+	{
+		group->AddItem(new AssignObjectUndoItem(*i, m_objects[no]));
+		m_objects[no] = 0;
+	}
+	g_undoManager.AddWork(group.release());
+	ExitTool();
+}
+
+
+REGISTER_TOOL(L"pasteclip", PasteTool, false);
 
 
 bool PasteTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
@@ -1885,7 +1923,7 @@ void PasteTool::Start()
 		g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &PasteTool::RecalcFantomsHandler);
 		// aligning base point of objects with cursor
 		CalcPositions(g_cursorWrld);
-		g_console.SetPrompt(L"Specify base point:");
+		g_console.SetPrompt(L"Specify insertion point:");
 	}
 	else
 	{
@@ -2202,6 +2240,7 @@ void ToolManager::DispatchTool(const wstring & id)
 			g_customCursorType = CustomCursorTypeBox;
 			g_selector.SelectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
 			g_canSnap = false;
+			g_console.SetPrompt(L"Select objects:");
 		}
 		else
 		{
