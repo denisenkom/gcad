@@ -13,6 +13,7 @@
 #include "resource.h"
 #include <windows.h> // for HDC
 #include <list>
+#include <map>
 #include <vector>
 #include <loki/functor.h>
 
@@ -24,6 +25,19 @@
 #ifndef GET_KEYSTATE_WPARAM
 #define GET_KEYSTATE_WPARAM(x) LOWORD(x)
 #endif
+
+#define REGISTER_TOOL(id, toolClass, needSelection) \
+	namespace Private \
+	{ \
+		struct toolClass ## Registrar \
+		{ \
+			toolClass ## Registrar() \
+			{ \
+				static toolClass instance; \
+				g_toolManager.RegisterTool(id, &instance, needSelection); \
+			} \
+		} toolClass ## registrar; \
+	}
 
 
 class WindowsError
@@ -168,25 +182,11 @@ public:
 };
 
 
-class Selector
-{
-public:
-	Selector() : m_lassoOn(false), m_lassoDrawn(false) {}
-	bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
-	void Cancel();
-	Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> SelectHandler;
-private:
-	bool m_lassoOn;
-	Point<double> m_lassoPt1, m_lassoPt2;
-	bool m_lassoDrawn;
-};
-
-
 class Tool
 {
 public:
-	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam) = 0;
-	virtual void Start(const std::list<CadObject *> & selected) = 0;
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam) { return false; }
+	virtual void Start() {}
 	virtual void Cancel() { Exiting(); }
 	virtual void Exiting() {}
 	virtual void Command(const std::wstring & cmd) {}
@@ -199,12 +199,27 @@ private:
 };
 
 
+class Selector : public Tool
+{
+public:
+	Selector() : m_lassoOn(false), m_lassoDrawn(false) {}
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual void Cancel();
+	Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> SelectHandler;
+	Tool * NextTool;
+private:
+	bool m_lassoOn;
+	Point<double> m_lassoPt1, m_lassoPt2;
+	bool m_lassoDrawn;
+};
+
+
 class DefaultTool : public Tool
 {
 public:
 	DefaultTool() : m_state(Selecting) {}
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
-	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Start();
 	void DrawManipulators(HDC hdc);
 	virtual void Cancel();
 	virtual void Exiting();
@@ -236,7 +251,7 @@ class ZoomTool : public Tool
 public:
 	ZoomTool() : m_zooming(false) {}
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
-	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Start();
 private:
 	bool m_zooming;
 	int m_startX;
@@ -254,7 +269,7 @@ class PanTool : public Tool
 public:
 	PanTool() : m_panning(false) {}
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
-	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Start();
 private:
 	bool m_panning;
 	int m_prevX;
@@ -267,7 +282,7 @@ class DrawLinesTool : public Tool
 public:
 	DrawLinesTool() {}
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
-	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Start();
 	virtual void Command(const std::wstring & cmd);
 	virtual void Exiting();
 private:
@@ -283,7 +298,7 @@ class DrawCircleTool : public Tool
 {
 public:
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
-	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Start();
 	virtual void Command(const std::wstring & cmd);
 private:
 	enum State
@@ -317,7 +332,7 @@ class DrawArcsTool : public Tool
 {
 public:
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
-	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Start();
 	virtual void Command(const std::wstring & cmd);
 private:
 	enum State
@@ -342,13 +357,11 @@ class MoveTool : public Tool
 {
 public:
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
-	virtual void Start(const std::list<CadObject *> & selected);
-	virtual void Cancel();
+	virtual void Start();
 	virtual void Exiting();
 private:
 	enum State
 	{
-		StateSelecting,
 		StateChoosingBasePoint,
 		StateChoosingDestPoint,
 	};
@@ -365,7 +378,7 @@ class PasteTool : public Tool
 {
 public:
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
-	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Start();
 	virtual void Command(const std::wstring & cmd);
 	virtual void Exiting();
 private:
@@ -375,6 +388,20 @@ private:
 	void RecalcFantomsHandler();
 	void CalcPositions(const Point<double> & pt);
 	void FeedInsertionPoint(const Point<double> & pt);
+};
+
+
+class UndoTool : public Tool
+{
+public:
+	virtual void Start();
+};
+
+
+class RedoTool : public Tool
+{
+public:
+	virtual void Start();
 };
 
 
@@ -538,15 +565,25 @@ private:
 };
 
 
+class ToolManager
+{
+public:
+	void RegisterTool(const std::wstring & id, Tool * tool, bool needSelection);
+	void DispatchTool(const std::wstring & id);
+private:
+	struct ToolInfo
+	{
+		Tool * m_tool;
+		bool m_needSelection;
+	};
+	typedef std::map<std::wstring, ToolInfo> ToolsMapType;
+	ToolsMapType m_toolsMap;
+};
+
+
 extern Selector g_selector;
 extern DefaultTool g_defaultTool;
-extern PanTool g_panTool;
-extern ZoomTool g_zoomTool;
-extern DrawLinesTool g_drawLinesTool;
-extern DrawCircleTool g_drawCircleTool;
-extern DrawArcsTool g_drawArcsTool;
-extern MoveTool g_moveTool;
-extern PasteTool g_pasteTool;
+extern ToolManager g_toolManager;
 extern Tool * g_curTool;
 
 extern FantomManager g_fantomManager;
@@ -688,5 +725,20 @@ void DeleteSelectedObjects();
 void ExecuteCommand(const std::wstring & cmd);
 void Cancel();
 inline bool IsKey(const std::wstring & cmd, const std::wstring & key) { return wcsnicmp(cmd.c_str(), key.c_str(), cmd.size()) == 0; }
+
+inline std::wstring ToLower(const std::wstring & str)
+{
+	std::wstring result(str.size(), L'\0');
+	std::transform(str.begin(), str.end(), result.begin(), std::tolower);
+	return result;
+}
+
+inline std::wstring IntToWstr(int value)
+{
+	wchar_t buffer[16];
+	int len = std::swprintf(buffer, L"%d", value);
+	assert(len > 0);
+	return std::wstring(buffer, len);
+}
 
 #endif /* GLOBALS_H_ */

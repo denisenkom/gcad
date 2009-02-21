@@ -50,15 +50,9 @@ Point<double> g_cursorWrld;
 
 Document g_doc;
 
+ToolManager g_toolManager;
 Selector g_selector;
 DefaultTool g_defaultTool;
-PanTool g_panTool;
-ZoomTool g_zoomTool;
-DrawLinesTool g_drawLinesTool;
-DrawCircleTool g_drawCircleTool;
-DrawArcsTool g_drawArcsTool;
-MoveTool g_moveTool;
-PasteTool g_pasteTool;
 Tool * g_curTool = &g_defaultTool;
 
 FantomManager g_fantomManager;
@@ -68,9 +62,6 @@ UndoManager g_undoManager;
 bool g_canSnap = false;
 
 std::list<CadObject *> g_selected;
-
-
-static void DispatchCommand(const wstring & cmd);
 
 
 void DrawCursorRaw(HDC hdc, int x, int y)
@@ -563,26 +554,14 @@ void ExtendVScrollLimits(SCROLLINFO & si)
 }
 
 
-void SelectTool(Tool * tool)
-{
-	list<CadObject *> selected = g_selected;
-	g_defaultTool.Exiting();
-	g_curTool = tool;
-	g_curTool->Start(selected);
-	InvalidateRect(g_hclientWindow, 0, true);
-	UpdateWindow(g_hclientWindow);
-}
-
-
 void ExitTool()
 {
 	g_fantomManager.DeleteFantoms(false);
 	g_fantomManager.RecalcFantomsHandler = Functor<void>();
 	g_curTool->Exiting();
 	g_curTool = &g_defaultTool;
-	g_defaultTool.Start(list<CadObject*>());
+	g_defaultTool.Start();
 	InvalidateRect(g_hclientWindow, 0, true);
-	UpdateWindow(g_hclientWindow);
 }
 
 
@@ -715,6 +694,19 @@ bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 		}
 		return true;
 	}
+	case WM_KEYDOWN:
+		switch (wparam)
+		{
+		case VK_RETURN:
+			if (NextTool == 0)
+				return false;
+			g_curTool = NextTool;
+			NextTool->Start();
+			InvalidateRect(hwnd, 0, true);
+			return true;
+		default:
+			return false;
+		}
 	default:
 		return false;
 	}
@@ -853,7 +845,7 @@ bool DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 }
 
 
-void DefaultTool::Start(const std::list<CadObject *> & /*selected*/)
+void DefaultTool::Start()
 {
 	g_cursorType = CursorTypeManual;
 	g_cursorHandle = 0;
@@ -893,11 +885,7 @@ void DefaultTool::Exiting()
 		m_state = Selecting;
 		g_canSnap = false;
 	case Selecting:
-		if (g_selected.size() != 0)
-		{
-			m_manipulators.clear();
-			g_selected.clear();
-		}
+		m_manipulators.clear();
 		break;
 	}
 }
@@ -908,7 +896,7 @@ void DefaultTool::Command(const wstring & cmd)
 	switch (m_state)
 	{
 	case Selecting:
-		DispatchCommand(cmd);
+		g_toolManager.DispatchTool(cmd);
 		break;
 	case MovingManip:
 		break;
@@ -1043,6 +1031,9 @@ void Zoom(float prevMag, float deltaMag, int hscrollPos, int vscrollPos, int x, 
 }
 
 
+REGISTER_TOOL(L"zoom", ZoomTool, false);
+
+
 bool ZoomTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
@@ -1073,12 +1064,15 @@ bool ZoomTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 }
 
 
-void ZoomTool::Start(const std::list<CadObject *> & /*selected*/)
+void ZoomTool::Start()
 {
 	g_cursorType = CursorTypeSystem;
 	g_cursorHandle = LoadCursorW(g_hInstance, MAKEINTRESOURCEW(IDC_ZOOM));
 	g_canSnap = false;
 }
+
+
+REGISTER_TOOL(L"pan", PanTool, false);
 
 
 bool PanTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
@@ -1129,7 +1123,7 @@ bool PanTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lp
 }
 
 
-void PanTool::Start(const std::list<CadObject *> & /*selected*/)
+void PanTool::Start()
 {
 	g_cursorType = CursorTypeSystem;
 	g_cursorHandle = LoadCursorW(g_hInstance, MAKEINTRESOURCEW(IDC_PAN));
@@ -1187,7 +1181,7 @@ void DrawLinesTool::FeedPoint(const Point<double> & pt)
 
 
 
-void DrawLinesTool::Start(const std::list<CadObject *> & /*selected*/)
+void DrawLinesTool::Start()
 {
 	g_cursorType = CursorTypeManual;
 	g_cursorHandle = 0;
@@ -1210,6 +1204,9 @@ bool ParsePoint2D(const std::wstring & str, Point<double> & point)
 	g_console.Log(L"Invalid 2D point");
 	return false;
 }
+
+
+REGISTER_TOOL(L"line", DrawLinesTool, false);
 
 
 void DrawLinesTool::Command(const std::wstring & cmd)
@@ -1260,6 +1257,9 @@ void DrawLinesTool::UpdatePrompt()
 	else
 		g_console.SetPrompt(L"specify first point:");
 }
+
+
+REGISTER_TOOL(L"circle", DrawCircleTool, false);
 
 
 bool DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
@@ -1384,7 +1384,7 @@ void DrawCircleTool::RecalcFantomsHandler()
 }
 
 
-void DrawCircleTool::Start(const std::list<CadObject *> & selected)
+void DrawCircleTool::Start()
 {
 	g_cursorType = CursorTypeManual;
 	g_cursorHandle = 0;
@@ -1602,6 +1602,9 @@ void DrawCircleTool::CalcCircleFrom3Pt(const Point<double> & thirdPoint)
 }
 
 
+REGISTER_TOOL(L"arc", DrawArcsTool, false);
+
+
 bool DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
@@ -1628,7 +1631,7 @@ bool DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPAR
 }
 
 
-void DrawArcsTool::Start(const std::list<CadObject *> & /*selected*/)
+void DrawArcsTool::Start()
 {
 	g_cursorType = CursorTypeManual;
 	g_cursorHandle = 0;
@@ -1725,37 +1728,13 @@ void DrawArcsTool::CalcArcFrom3Pt(const Point<double> & thirdPoint)
 }
 
 
+REGISTER_TOOL(L"move", MoveTool, true);
+
+
 bool MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (m_state)
 	{
-	case StateSelecting:
-		switch (msg)
-		{
-		case WM_KEYDOWN:
-			switch (wparam)
-			{
-			case VK_RETURN:
-				m_state = StateChoosingBasePoint;
-				do
-				{
-					ClientDC hdc(hwnd);
-					if (g_cursorDrawn)
-						DrawCursor(hdc);
-					g_customCursorType = CustomCursorTypeCross;
-					if (g_cursorDrawn)
-						DrawCursor(hdc);
-				}
-				while (false);
-				g_canSnap = true;
-				return true;;
-			default:
-				return g_selector.ProcessInput(hwnd, msg, wparam, lparam);
-			}
-		default:
-			return g_selector.ProcessInput(hwnd, msg, wparam, lparam);
-		}
-		break;
 	case StateChoosingBasePoint:
 		switch (msg)
 		{
@@ -1812,33 +1791,14 @@ bool MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 }
 
 
-void MoveTool::Start(const std::list<CadObject *> & selected)
+void MoveTool::Start()
 {
-	if (selected.size() == 0)
-	{
-		m_state = StateSelecting;
-		g_cursorType = CursorTypeManual;
-		g_cursorHandle = 0;
-		g_customCursorType = CustomCursorTypeBox;
-		g_selector.SelectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
-		g_canSnap = false;
-	}
-	else
-	{
-		g_selected = selected;
-		m_state = StateChoosingBasePoint;
-		g_cursorType = CursorTypeManual;
-		g_cursorHandle = 0;
-		g_customCursorType = CustomCursorTypeCross;
-		g_selector.SelectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
-		g_canSnap = true;
-	}
-}
-
-
-void MoveTool::Cancel()
-{
-	Exiting();
+	assert(g_selected.size() != 0);
+	m_state = StateChoosingBasePoint;
+	g_cursorType = CursorTypeManual;
+	g_cursorHandle = 0;
+	g_customCursorType = CustomCursorTypeCross;
+	g_canSnap = true;
 }
 
 
@@ -1846,7 +1806,7 @@ void MoveTool::Exiting()
 {
 	m_fantomLine.reset(0);
 	DeleteCopies();
-	g_selector.Cancel();
+	g_selected.clear();
 }
 
 
@@ -1872,6 +1832,9 @@ void MoveTool::RecalcFantomsHandler()
 }
 
 
+REGISTER_TOOL(L"paste", PasteTool, false);
+
+
 bool PasteTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
@@ -1886,7 +1849,7 @@ bool PasteTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM 
 }
 
 
-void PasteTool::Start(const std::list<CadObject *> & /*selected*/)
+void PasteTool::Start()
 {
 	g_cursorType = CursorTypeManual;
 	g_cursorHandle = 0;
@@ -1986,6 +1949,26 @@ void PasteTool::FeedInsertionPoint(const Point<double> & pt)
 		*i = 0;
 	}
 	g_undoManager.AddWork(group.release());
+	ExitTool();
+}
+
+
+REGISTER_TOOL(L"undo", UndoTool, false);
+
+
+void UndoTool::Start()
+{
+	g_undoManager.Undo();
+	ExitTool();
+}
+
+
+REGISTER_TOOL(L"mredo", RedoTool, false);
+
+
+void RedoTool::Start()
+{
+	g_undoManager.Redo();
 	ExitTool();
 }
 
@@ -2185,33 +2168,55 @@ void DeleteSelectedObjects()
 }
 
 
-static void DispatchCommand(const wstring & cmd)
+void ToolManager::RegisterTool(const wstring & id, Tool * tool, bool needSelection)
 {
-	size_t start = cmd.find_first_not_of(L"_.");
+	ToolInfo toolInfo = {tool, needSelection};
+	m_toolsMap[ToLower(id)] = toolInfo;
+}
+
+
+void ToolManager::DispatchTool(const wstring & id)
+{
+	g_defaultTool.Exiting();
+	static UndoTool s_undoTool;
+	static RedoTool s_redoTool;
+	size_t start = id.find_first_not_of(L"_.");
 	if (start == wstring::npos)
-		start = cmd.size();
-	wstring cmdreal(cmd, start);
-	transform(cmdreal.begin(), cmdreal.end(), cmdreal.begin(), tolower);
-	if (cmdreal == L"line")
-		SelectTool(&g_drawLinesTool);
-	else if (cmdreal == L"arc")
-		SelectTool(&g_drawArcsTool);
-	else if (cmdreal == L"circle")
-		SelectTool(&g_drawCircleTool);
-	else if (cmdreal == L"pan")
-		SelectTool(&g_panTool);
-	else if (cmdreal == L"zoom")
-		SelectTool(&g_zoomTool);
-	else if (cmdreal == L"move")
-		SelectTool(&g_moveTool);
-	else if (cmdreal == L"u" || cmdreal == L"undo")
-		g_undoManager.Undo();
-	else if (cmdreal == L"mredo")
-		g_undoManager.Redo();
-	else if (cmdreal == L"pasteclip")
-		SelectTool(&g_pasteTool);
+		start = id.size();
+	wstring idreal(id, start);
+	idreal = ToLower(idreal);
+	ToolsMapType::iterator pos = m_toolsMap.find(idreal);
+	if (pos == m_toolsMap.end())
+	{
+		g_console.Log(L"unknown command: '" + idreal + L"'");
+		return;
+	}
+	if (pos->second.m_needSelection)
+	{
+		if (g_selected.size() == 0)
+		{
+			g_selector.NextTool = pos->second.m_tool;
+			g_curTool = &g_selector;
+			g_cursorType = CursorTypeManual;
+			g_cursorHandle = 0;
+			g_customCursorType = CustomCursorTypeBox;
+			g_selector.SelectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
+			g_canSnap = false;
+		}
+		else
+		{
+			g_console.Log(L"Found " + IntToWstr(g_selected.size()) + L" objects");
+			g_curTool = pos->second.m_tool;
+			g_curTool->Start();
+		}
+	}
 	else
-		g_console.Log(L"unknown command: '" + cmdreal + L"'");
+	{
+		g_selected.clear();
+		g_curTool = pos->second.m_tool;
+		g_curTool->Start();
+	}
+	InvalidateRect(g_hclientWindow, 0, true);
 }
 
 
@@ -2222,7 +2227,7 @@ void ExecuteCommand(const wstring & cmd)
 	else
 		g_console.ClearInput();
 	g_console.LogCommand(cmd);
-	DispatchCommand(cmd);
+	g_toolManager.DispatchTool(cmd);
 }
 
 
@@ -2235,7 +2240,7 @@ void Cancel()
 	if (g_curTool != &g_defaultTool)
 	{
 		g_curTool = &g_defaultTool;
-		g_defaultTool.Start(list<CadObject *>());
+		g_defaultTool.Start();
 	}
 	InvalidateRect(g_hclientWindow, 0, true);
 }

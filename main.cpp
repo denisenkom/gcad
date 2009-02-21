@@ -94,7 +94,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 		si.nPos = g_hscrollPos;
 		SetScrollInfo(hwnd, SB_HORZ, &si, true);}
 
-		g_defaultTool.Start(list<CadObject*>());
+		g_defaultTool.Start();
 		}
 		return 0;
 	case WM_DESTROY:
