@@ -1205,17 +1205,30 @@ void DrawLinesTool::Start(const std::list<CadObject *> & /*selected*/)
 }
 
 
-void DrawLinesTool::Command(const std::wstring & msg)
+bool TryParsePoint2D(const std::wstring & str, Point<double> & point)
 {
-	wstring msgcopy(msg);
-	transform(msgcopy.begin(), msgcopy.end(), msgcopy.begin(), tolower);
-	if (m_points.size() >= 3 && msgcopy == L"c")
+	return (swscanf(str.c_str(), L"%lf,%lf", &point.X, &point.Y) == 2);
+}
+
+
+bool ParsePoint2D(const std::wstring & str, Point<double> & point)
+{
+	if (TryParsePoint2D(str, point))
+		return true;
+	g_console.Log(L"Invalid 2D point");
+	return false;
+}
+
+
+void DrawLinesTool::Command(const std::wstring & cmd)
+{
+	if (m_points.size() >= 3 && IsKey(cmd, L"close"))
 	{
 		FeedPoint(m_points.front());
 		ExitTool();
 		return;
 	}
-	if (m_points.size() >= 1 && msgcopy == L"u")
+	if (m_points.size() >= 1 && IsKey(cmd, L"undo"))
 	{
 		m_points.pop_back();
 		UpdatePrompt();
@@ -1232,13 +1245,9 @@ void DrawLinesTool::Command(const std::wstring & msg)
 		InvalidateRect(g_hclientWindow, 0, true);
 		return;
 	}
-	double x, y;
-	if (swscanf(msg.c_str(), L"%lf,%lf", &x, &y) != 2)
-	{
-		g_console.Log(L"Invalid point");
-		return;
-	}
-	FeedPoint(Point<double>(x, y));
+	Point<double> pt;
+	if (ParsePoint2D(cmd, pt))
+		FeedPoint(pt);
 }
 
 
@@ -1269,15 +1278,8 @@ bool DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LP
 		switch (msg)
 		{
 		case WM_LBUTTONUP:
-			m_cadCircle.reset(new CadCircle());
-			m_cadCircle->Center = g_cursorWrld;
-			m_cadCircle->Radius = 0;
-			m_radiusLine.reset(new CadLine());
-			m_radiusLine->Point1 = m_radiusLine->Point2 = g_cursorWrld;
-			m_state = StateSelectingRadius;
-			g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawCircleTool::RecalcFantomsHandler);
-			g_fantomManager.AddFantom(m_cadCircle.get());
-			g_fantomManager.AddFantom(m_radiusLine.get());
+			g_console.LogCommand();
+			FeedCenter(g_cursorWrld);
 			return true;
 		default:
 			return false;
@@ -1286,9 +1288,68 @@ bool DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LP
 		switch (msg)
 		{
 		case WM_LBUTTONUP:
-			m_radiusLine.reset(0);
-			g_undoManager.AddWork(new AddObjectUndoItem(m_cadCircle.release()));
-			ExitTool();
+			g_console.LogCommand();
+			FeedRadius((g_cursorWrld - m_cadCircle->Center).Length());
+			return true;
+		default:
+			return false;
+		}
+	case StateSelectingDiameter:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			g_console.LogCommand();
+			FeedRadius((g_cursorWrld - m_cadCircle->Center).Length() / 2);
+			return true;
+		default:
+			return false;
+		}
+	case State2PtSelectingFirstPoint:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			g_console.LogCommand();
+			Feed2PtFirstPoint(g_cursorWrld);
+			return true;
+		default:
+			return false;
+		}
+	case State2PtSelectingSecondPoint:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			g_console.LogCommand();
+			Feed2PtSecondPoint(g_cursorWrld);
+			return true;
+		default:
+			return false;
+		}
+	case State3PtSelectingFirstPoint:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			g_console.LogCommand();
+			Feed3PtFirstPoint(g_cursorWrld);
+			return true;
+		default:
+			return false;
+		}
+	case State3PtSelectingSecondPoint:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			g_console.LogCommand();
+			Feed3PtSecondPoint(g_cursorWrld);
+			return true;
+		default:
+			return false;
+		}
+	case State3PtSelectingThirdPoint:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			g_console.LogCommand();
+			Feed3PtThirdPoint(g_cursorWrld);
 			return true;
 		default:
 			return false;
@@ -1302,8 +1363,32 @@ bool DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LP
 
 void DrawCircleTool::RecalcFantomsHandler()
 {
-	m_cadCircle->Radius = (g_cursorWrld - m_cadCircle->Center).Length();
-	m_radiusLine->Point2 = g_cursorWrld;
+	switch (m_state)
+	{
+	case StateSelectingCenter:
+		break;
+	case StateSelectingRadius:
+		m_cadCircle->Radius = (g_cursorWrld - m_cadCircle->Center).Length();
+		m_line->Point2 = g_cursorWrld;
+		break;
+	case StateSelectingDiameter:
+		m_cadCircle->Radius = (g_cursorWrld - m_cadCircle->Center).Length() / 2;
+		m_line->Point2 = g_cursorWrld;
+		break;
+	case State2PtSelectingFirstPoint:
+		break;
+	case State2PtSelectingSecondPoint:
+		m_cadCircle->Center = (g_cursorWrld + m_firstPoint)/2;
+		m_cadCircle->Radius = (g_cursorWrld - m_firstPoint).Length() / 2;
+		break;
+	case State3PtSelectingFirstPoint:
+		break;
+	case State3PtSelectingSecondPoint:
+		break;
+	case State3PtSelectingThirdPoint:
+		CalcCircleFrom3Pt(g_cursorWrld);
+		break;
+	}
 }
 
 
@@ -1314,6 +1399,214 @@ void DrawCircleTool::Start(const std::list<CadObject *> & selected)
 	g_customCursorType = CustomCursorTypeCross;
 	m_state = StateSelectingCenter;
 	g_canSnap = true;
+	g_console.SetPrompt(L"specify center point for circle [2P/3P]:");
+	g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawCircleTool::RecalcFantomsHandler);
+}
+
+
+void DrawCircleTool::Command(const wstring & cmd)
+{
+	Point<double> pt;
+	double radius, diameter;
+	switch (m_state)
+	{
+	case StateSelectingCenter:
+		if (IsKey(cmd, L"2p"))
+		{
+			m_state = State2PtSelectingFirstPoint;
+			g_console.SetPrompt(L"specify first point on circle's diameter:");
+		}
+		else if (IsKey(cmd, L"3p"))
+		{
+			m_state = State3PtSelectingFirstPoint;
+			g_console.SetPrompt(L"specify first point on circle:");
+		}
+		else if (ParsePoint2D(cmd, pt))
+		{
+			FeedCenter(pt);
+		}
+		break;
+	case StateSelectingRadius:
+		if (TryParsePoint2D(cmd, pt))
+		{
+			FeedRadius((pt - m_cadCircle->Center).Length());
+		}
+		else if (swscanf(cmd.c_str(), L"%lf", &radius) == 1)
+		{
+			FeedRadius(radius);
+		}
+		else if (IsKey(cmd, L"diameter"))
+		{
+			m_state = StateSelectingDiameter;
+			m_cadCircle->Radius = (g_cursorWrld - m_cadCircle->Center).Length() / 2;
+			g_console.SetPrompt(L"specify diameter for circle or [Radius]:");
+			InvalidateRect(g_hclientWindow, 0, true);
+		}
+		else
+		{
+			g_console.Log(L"expected radius value or point coordinates or character D");
+		}
+		break;
+	case StateSelectingDiameter:
+		if (TryParsePoint2D(cmd, pt))
+		{
+			FeedRadius((pt - m_cadCircle->Center).Length() / 2);
+		}
+		else if (swscanf(cmd.c_str(), L"%lf", &diameter) == 1)
+		{
+			FeedRadius(diameter);
+		}
+		else if (IsKey(cmd, L"radius"))
+		{
+			m_state = StateSelectingRadius;
+			m_cadCircle->Radius = (g_cursorWrld - m_cadCircle->Center).Length();
+			g_console.SetPrompt(L"specify radius for circle or [Diameter]:");
+			InvalidateRect(g_hclientWindow, 0, true);
+		}
+		else
+		{
+			g_console.Log(L"expected diameter value or point coordinates or character R");
+		}
+		break;
+	case State2PtSelectingFirstPoint:
+		if (ParsePoint2D(cmd, pt))
+			Feed2PtFirstPoint(pt);
+		break;
+	case State2PtSelectingSecondPoint:
+		if (ParsePoint2D(cmd, pt))
+			Feed2PtSecondPoint(pt);
+		break;
+	case State3PtSelectingFirstPoint:
+		if (ParsePoint2D(cmd, pt))
+			Feed3PtFirstPoint(pt);
+		break;
+	case State3PtSelectingSecondPoint:
+		if (ParsePoint2D(cmd, pt))
+			Feed3PtSecondPoint(pt);
+		break;
+	case State3PtSelectingThirdPoint:
+		if (ParsePoint2D(cmd, pt))
+			Feed3PtThirdPoint(pt);
+		break;
+	}
+}
+
+
+void DrawCircleTool::FeedCenter(const Point<double> & center)
+{
+	m_cadCircle.reset(new CadCircle());
+	m_cadCircle->Center = center;
+	m_cadCircle->Radius = (g_cursorWrld - center).Length();
+	m_line.reset(new CadLine());
+	m_line->Point1 = center;
+	m_line->Point2 = g_cursorWrld;
+	m_state = StateSelectingRadius;
+	g_console.SetPrompt(L"specify radius for circle or [Diameter]:");
+	g_fantomManager.AddFantom(m_cadCircle.get());
+	g_fantomManager.AddFantom(m_line.get());
+	InvalidateRect(g_hclientWindow, 0, true);
+}
+
+
+void DrawCircleTool::FeedRadius(double radius)
+{
+	if (radius <= 0)
+	{
+		g_console.Log(L"radius must be positive");
+		return;
+	}
+	m_line.reset(0);
+	m_cadCircle->Radius = radius;
+	g_undoManager.AddWork(new AddObjectUndoItem(m_cadCircle.release()));
+	ExitTool();
+}
+
+
+void DrawCircleTool::Feed2PtFirstPoint(const Point<double> & pt)
+{
+	m_firstPoint = pt;
+	m_cadCircle.reset(new CadCircle());
+	m_cadCircle->Center = (g_cursorWrld + pt)/2;
+	m_cadCircle->Radius = (g_cursorWrld - pt).Length() / 2;
+	m_state = State2PtSelectingSecondPoint;
+	g_console.SetPrompt(L"specify second point of circle's diameter:");
+	g_fantomManager.AddFantom(m_cadCircle.get());
+	InvalidateRect(g_hclientWindow, 0, true);
+}
+
+
+void DrawCircleTool::Feed2PtSecondPoint(const Point<double> & pt)
+{
+	if (m_firstPoint == pt)
+	{
+		g_console.Log(L"Points must be different");
+		return;
+	}
+	m_cadCircle->Center = (pt + m_firstPoint)/2;
+	m_cadCircle->Radius = (pt - m_firstPoint).Length() / 2;
+	g_undoManager.AddWork(new AddObjectUndoItem(m_cadCircle.release()));
+	ExitTool();
+}
+
+
+void DrawCircleTool::Feed3PtFirstPoint(const Point<double> & pt)
+{
+	m_firstPoint = pt;
+	m_state = State3PtSelectingSecondPoint;
+	g_console.SetPrompt(L"specify second point on circle:");
+}
+
+
+void DrawCircleTool::Feed3PtSecondPoint(const Point<double> & pt)
+{
+	if (m_firstPoint == pt)
+	{
+		g_console.Log(L"Points must be different");
+		return;
+	}
+	m_secondPoint = pt;
+	CalcCircleFrom3Pt(g_cursorWrld);
+	m_state = State3PtSelectingThirdPoint;
+	g_console.SetPrompt(L"specify third point on circle:");
+	InvalidateRect(g_hclientWindow, 0, true);
+}
+
+
+void DrawCircleTool::Feed3PtThirdPoint(const Point<double> & pt)
+{
+	CalcCircleFrom3Pt(pt);
+	if (m_cadCircle.get() == 0)
+	{
+		g_console.Log(L"Invalid circle");
+		return;
+	}
+	g_undoManager.AddWork(new AddObjectUndoItem(m_cadCircle.release()));
+	ExitTool();
+}
+
+
+void DrawCircleTool::CalcCircleFrom3Pt(const Point<double> & thirdPoint)
+{
+	CircleArc<double> arc = ArcFrom3Pt(m_firstPoint, m_secondPoint, thirdPoint);
+	if (arc.Straight)
+	{
+		if (m_cadCircle.get() != 0)
+		{
+			m_cadCircle.reset(0);
+			g_fantomManager.DeleteFantoms(false);
+			InvalidateRect(g_hclientWindow, 0, true);
+		}
+	}
+	else
+	{
+		if (m_cadCircle.get() == 0)
+		{
+			m_cadCircle.reset(new CadCircle());
+			g_fantomManager.AddFantom(m_cadCircle.get());
+		}
+		m_cadCircle->Center = arc.Center;
+		m_cadCircle->Radius = arc.Radius;
+	}
 }
 
 

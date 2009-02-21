@@ -284,16 +284,32 @@ class DrawCircleTool : public Tool
 public:
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Start(const std::list<CadObject *> & selected);
+	virtual void Command(const std::wstring & cmd);
 private:
 	enum State
 	{
 		StateSelectingCenter,
 		StateSelectingRadius,
+		StateSelectingDiameter,
+		State2PtSelectingFirstPoint,
+		State2PtSelectingSecondPoint,
+		State3PtSelectingFirstPoint,
+		State3PtSelectingSecondPoint,
+		State3PtSelectingThirdPoint,
 	};
 	State m_state;
 	std::auto_ptr<CadCircle> m_cadCircle;
-	std::auto_ptr<CadLine> m_radiusLine;
+	std::auto_ptr<CadLine> m_line;
+	Point<double> m_firstPoint, m_secondPoint;
 	void RecalcFantomsHandler();
+	void FeedCenter(const Point<double> & center);
+	void FeedRadius(double radius);
+	void Feed2PtFirstPoint(const Point<double> & pt);
+	void Feed2PtSecondPoint(const Point<double> & pt);
+	void Feed3PtFirstPoint(const Point<double> & pt);
+	void Feed3PtSecondPoint(const Point<double> & pt);
+	void Feed3PtThirdPoint(const Point<double> & pt);
+	void CalcCircleFrom3Pt(const Point<double> & thirdPoint);
 };
 
 
@@ -664,5 +680,6 @@ void ReadPtr(unsigned char const * &ptr, T & val, size_t & size)
 void DeleteSelectedObjects();
 void ExecuteCommand(const std::wstring & cmd);
 void Cancel();
+inline bool IsKey(const std::wstring & cmd, const std::wstring & key) { return wcsnicmp(cmd.c_str(), key.c_str(), cmd.size()) == 0; }
 
 #endif /* GLOBALS_H_ */
