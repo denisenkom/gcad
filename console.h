@@ -27,6 +27,7 @@ public:
 	bool HasInput();
 	std::wstring GetInput();
 	void ClearInput();
+	void SetFocus() { if (!::SetFocus(m_editWnd)) assert(0); }
 private:
 	HWND m_handle;
 	HWND m_histWnd;

@@ -805,7 +805,7 @@ bool DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 			switch (wparam)
 			{
 			case VK_DELETE:
-				DeleteSelectedObjects();
+				ExecuteCommand(L"erase");
 				return true;
 			default:
 				return false;
@@ -2069,6 +2069,16 @@ void RedoTool::Start()
 }
 
 
+REGISTER_TOOL(L"erase", EraseTool, true);
+
+
+void EraseTool::Start()
+{
+	DeleteSelectedObjects();
+	ExitTool();
+}
+
+
 Point<int> WorldToScreen(float x, float y)
 {
 	Point<int> result;
@@ -2274,8 +2284,6 @@ void ToolManager::RegisterTool(const wstring & id, Tool * tool, bool needSelecti
 void ToolManager::DispatchTool(const wstring & id)
 {
 	g_defaultTool.Exiting();
-	static UndoTool s_undoTool;
-	static RedoTool s_redoTool;
 	size_t start = id.find_first_not_of(L"_.");
 	if (start == wstring::npos)
 		start = id.size();

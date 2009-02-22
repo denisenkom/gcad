@@ -167,8 +167,7 @@ LRESULT CALLBACK Console::EditWndProc(HWND hwnd, unsigned int msg, WPARAM wparam
 		}
 			return 0;
 		case VK_ESCAPE:
-			if (!SetWindowTextW(m_editWnd, L""))
-				assert(0);
+			Cancel();
 			return 0;
 		default:
 			return CallWindowProc(m_defEditProc, hwnd, msg, wparam, lparam);

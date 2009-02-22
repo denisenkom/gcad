@@ -425,6 +425,13 @@ public:
 };
 
 
+class EraseTool : public Tool
+{
+public:
+	virtual void Start();
+};
+
+
 enum CursorType { CursorTypeManual, CursorTypeSystem };
 enum CustomCursorType { CustomCursorTypeSelect, CustomCursorTypeCross, CustomCursorTypeBox };
 

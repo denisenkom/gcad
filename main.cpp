@@ -593,6 +593,8 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 			return DefWindowProc(hwnd, msg, wparam, lparam);
 		}
 	case WM_LBUTTONDOWN:
+		if (SetFocus(hwnd) == 0)
+			assert(0);
 		if (!g_console.HasInput())
 			g_curTool->ProcessInput(hwnd, msg, wparam, lparam);
 		return 0;
@@ -626,6 +628,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 				return g_console.Input(msg, wparam, lparam);
 		}
 	case WM_CHAR:
+		g_console.SetFocus();
 		return g_console.Input(msg, wparam, lparam);
 	default:
 		return DefWindowProc(hwnd, msg, wparam, lparam);
