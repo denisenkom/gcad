@@ -158,6 +158,7 @@ void ImportDxf(HWND hwnd)
 		if (!rdr.ReadItem(item) || item.first != 0)
 			throw wstring(L"File has invalid format");
 		bool done = false;
+		auto_ptr<GroupUndoItem> groupItem(new GroupUndoItem);
 		while (!done)
 		{
 			if (item.second == "LINE")
@@ -199,10 +200,50 @@ void ImportDxf(HWND hwnd)
 				}
 				if (!lineDone || flags != (P1X | P1Y | P2X | P2Y))
 					throw wstring(L"File has invalid format");
-				CadLine * line = new CadLine();
+				auto_ptr<CadLine> line(new CadLine);
 				line->Point1 = p1;
 				line->Point2 = p2;
-				g_doc.Objects.push_back(line);
+				groupItem->AddItem(new AddObjectUndoItem(line.release()));
+			}
+			else if (item.second == "CIRCLE")
+			{
+				Point<double> center;
+				double radius;
+				enum Flags
+				{
+					CX = 1,
+					CY = 2,
+					RADIUS = 4,
+				};
+				int flags = 0;
+				bool done = false;
+				while (!done && rdr.ReadItem(item))
+				{
+					switch (item.first)
+					{
+					case 0:
+						done = true;
+						break;
+					case 10:
+						center.X = DxfStrToDouble(item.second.c_str());
+						flags |= CX;
+						break;
+					case 20:
+						center.Y = DxfStrToDouble(item.second.c_str());
+						flags |= CY;
+						break;
+					case 40:
+						radius = DxfStrToDouble(item.second.c_str());
+						flags |= RADIUS;
+						break;
+					}
+				}
+				if (flags != (CX | CY | RADIUS))
+					throw wstring(L"File has invalid format");
+				auto_ptr<CadCircle> circle(new CadCircle);
+				circle->Center = center;
+				circle->Radius = radius;
+				groupItem->AddItem(new AddObjectUndoItem(circle.release()));
 			}
 			else if (item.second == "ARC")
 			{
@@ -250,7 +291,7 @@ void ImportDxf(HWND hwnd)
 				}
 				if (!arcDone || flags != (CX | CY | RADIUS | ANGLE1 | ANGLE2))
 					throw wstring(L"File has invalid format");
-				CadArc * arc = new CadArc();
+				auto_ptr<CadArc> arc(new CadArc);
 				arc->Center = center;
 				arc->Radius = radius;
 				arc->Ccw = true;
@@ -258,7 +299,7 @@ void ImportDxf(HWND hwnd)
 				arc->Start.Y = sin(ang1*M_PI/180)*radius + center.Y;
 				arc->End.X = cos(ang2*M_PI/180)*radius + center.X;
 				arc->End.Y = sin(ang2*M_PI/180)*radius + center.Y;
-				g_doc.Objects.push_back(arc);
+				groupItem->AddItem(new AddObjectUndoItem(arc.release()));
 			}
 			else if (item.second == "LWPOLYLINE")
 			{
@@ -311,7 +352,7 @@ void ImportDxf(HWND hwnd)
 				assert(result->Nodes.size() <= LONG_MAX);
 				if (static_cast<long>(result->Nodes.size()) != numVerts)
 					throw wstring(L"File has invalid format");
-				g_doc.Objects.push_back(result.release());
+				groupItem->AddItem(new AddObjectUndoItem(result.release()));
 			}
 			else if (item.second == "ENDSEC")
 			{
@@ -324,6 +365,7 @@ void ImportDxf(HWND hwnd)
 					;
 			}
 		}
+		g_undoManager.AddWork(groupItem.release());
 		InvalidateRect(g_hclientWindow, 0, true);
 	}
 	catch (wstring & err)
