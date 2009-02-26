@@ -94,11 +94,21 @@ bool DxfReader::ReadItem(pair<int, string> & result)
 }
 
 
+long DxfStrToLong(const char * str)
+{
+	char * endp;
+	long result = strtol(str, &endp, 10);
+	if (result == 0 && str == endp)
+		throw wstring(L"File has invalid format");
+	return result;
+}
+
+
 double DxfStrToDouble(const char * str)
 {
 	char * endp;
 	double result = strtod(str, &endp);
-	if (str == endp)
+	if (result == 0 && str == endp)
 		throw wstring(L"File has invalid format");
 	return result;
 }
@@ -249,6 +259,59 @@ void ImportDxf(HWND hwnd)
 				arc->End.X = cos(ang2*M_PI/180)*radius + center.X;
 				arc->End.Y = sin(ang2*M_PI/180)*radius + center.Y;
 				g_doc.Objects.push_back(arc);
+			}
+			else if (item.second == "LWPOLYLINE")
+			{
+				long numVerts = -1;
+				auto_ptr<CadPolyline> result(new CadPolyline);
+				bool done = false;
+				enum Flags
+				{
+					GOTX = 1,
+					GOTY = 2,
+				};
+				int flags;
+				while (!done && rdr.ReadItem(item))
+				{
+					switch (item.first)
+					{
+					case 0:
+						done = true;
+						break;
+					case 90:
+						numVerts = DxfStrToLong(item.second.c_str());
+						break;
+					case 70:
+						result->Closed = (DxfStrToLong(item.second.c_str()) & 0x1) != 0;
+						break;
+					case 10:
+						if (result->Nodes.size() > 0)
+						{
+							if ((flags & GOTX) == 0 || (flags & GOTY) == 0)
+								throw wstring(L"File has invalid format");
+						}
+						flags = 0;
+						assert(result->Nodes.size() <= LONG_MAX);
+						if (numVerts <= static_cast<long>(result->Nodes.size()))
+							throw wstring(L"File has invalid format");
+						result->Nodes.push_back(CadPolyline::Node());
+						result->Nodes.back().Bulge = 0;
+						result->Nodes.back().Point.X = DxfStrToDouble(item.second.c_str());
+						flags |= GOTX;
+						break;
+					case 20:
+						result->Nodes.back().Point.Y = DxfStrToDouble(item.second.c_str());
+						flags |= GOTY;
+						break;
+					case 42:
+						result->Nodes.back().Bulge = DxfStrToDouble(item.second.c_str());
+						break;
+					}
+				}
+				assert(result->Nodes.size() <= LONG_MAX);
+				if (static_cast<long>(result->Nodes.size()) != numVerts)
+					throw wstring(L"File has invalid format");
+				g_doc.Objects.push_back(result.release());
 			}
 			else if (item.second == "ENDSEC")
 			{

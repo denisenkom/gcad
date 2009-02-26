@@ -210,6 +210,293 @@ void CadLine::Load(unsigned char const *& ptr, size_t & size)
 }
 
 
+static void DrawArcInternal(HDC hdc, const CircleArc<double> & arc, void (*drawer)(HDC, int, int, int, int, int, int, int, int))
+{
+	if (arc.Radius != 0 & arc.Radius < 10E+10)
+	{
+		Point<int> center = WorldToScreen(arc.Center);
+		Point<int> start = WorldToScreen(arc.Start);
+		Point<int> end = WorldToScreen(arc.End);
+		int r = static_cast<int>(floor(arc.Radius * g_magification + 0.5));
+		if (!SetArcDirection(hdc, arc.Ccw ? AD_COUNTERCLOCKWISE : AD_CLOCKWISE))
+			assert(0);
+		drawer(hdc, center.X - r, center.Y - r, center.X + r + 1, center.Y + r + 1, start.X, start.Y, end.X, end.Y);
+	}
+}
+
+
+static void ArcDrawer(HDC hdc, int rcl, int rct, int rcr, int rcb, int sx, int sy, int ex, int ey)
+{
+	if (!Arc(hdc, rcl, rct, rcr, rcb, sx, sy, ex, ey))
+		assert(0);
+}
+
+static void ArcToDrawer(HDC hdc, int rcl, int rct, int rcr, int rcb, int sx, int sy, int ex, int ey)
+{
+	if (!LineTo(hdc, sx, sy))
+		assert(0);
+	if (!ArcTo(hdc, rcl, rct, rcr, rcb, sx, sy, ex, ey))
+		assert(0);
+	if (!LineTo(hdc, ex, ey))
+		assert(0);
+}
+
+
+inline void DrawArc(HDC hdc, const CircleArc<double> & arc)
+{
+	DrawArcInternal(hdc, arc, &ArcDrawer);
+}
+
+inline void DrawArcTo(HDC hdc, const CircleArc<double> & arc)
+{
+	DrawArcInternal(hdc, arc, &ArcToDrawer);
+}
+
+
+// draws from current raster position
+static void DrawPolylineSeg(HDC hdc, const CadPolyline::Node & from, const CadPolyline::Node & to)
+{
+	if (from.Bulge == 0)
+	{
+		Point<int> scnPt = WorldToScreen(to.Point.X, to.Point.Y);
+		LineTo(hdc, scnPt.X, scnPt.Y);
+	}
+	else
+	{
+		DrawArcTo(hdc, ArcFrom2PtAndBulge(from.Point, to.Point, from.Bulge));
+	}
+}
+
+
+void CadPolyline::Draw(HDC hdc, bool selected) const
+{
+	HPEN hpen = selected ? g_selectedLineHPen : g_lineHPen;
+	if (SelectObject(hdc, hpen) == NULL)
+		assert(0);
+	if (SetBkColor(hdc, RGB(0, 0, 0)) == CLR_INVALID)
+		assert(0);
+	list<Node>::const_iterator i = Nodes.begin();
+	Node prev;
+	assert(i != Nodes.end());
+	Point<int> scnPt = WorldToScreen(i->Point);
+	MoveToEx(hdc, scnPt.X, scnPt.Y, 0);
+	prev = *i;
+	i++;
+	for (; i != Nodes.end(); prev = *i, i++)
+		DrawPolylineSeg(hdc, prev, *i);
+	if (Closed)
+		DrawPolylineSeg(hdc, Nodes.back(), Nodes.front());
+}
+
+
+static bool PolylineSegIntersectsRect(const CadPolyline::Node & from, const CadPolyline::Node & to, const Rect<double> & rect)
+{
+	if (from.Bulge == 0)
+	{
+		return LineIntersectsRect(from.Point, to.Point, rect);
+	}
+	else
+	{
+		CircleArc<double> arc = ArcFrom2PtAndBulge(from.Point, to.Point, from.Bulge);
+		return Intersects(arc, rect);
+	}
+}
+
+
+bool CadPolyline::IntersectsRect(double x1, double y1, double x2, double y2) const
+{
+	Node prev;
+	Rect<double> rect(x1, y1, x2, y2);
+	for (list<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); prev = *i, i++)
+	{
+		if (i == Nodes.begin())
+			continue;
+		if (PolylineSegIntersectsRect(prev, *i, rect))
+			return true;
+	}
+	if (Closed)
+		return PolylineSegIntersectsRect(Nodes.back(), Nodes.front(), rect);
+	return false;
+}
+
+
+static Rect<double> PolylineSegBoundingRect(const CadPolyline::Node & from,
+		const CadPolyline::Node & to)
+{
+	if (from.Bulge == 0)
+		return Rect<double>(from.Point, to.Point).Normalized();
+	else
+		return ArcFrom2PtAndBulge(from.Point, to.Point, from.Bulge).CalcBoundingRect();
+
+}
+
+
+Rect<double> CadPolyline::GetBoundingRect() const
+{
+	Rect<double> result;
+	bool first = true;
+	Node prev;
+	for (list<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); prev = *i, i++)
+	{
+		if (i == Nodes.begin())
+			continue;
+		Rect<double> rect = PolylineSegBoundingRect(prev, *i);
+		if (first)
+		{
+			result = rect;
+			first = false;
+		}
+		else
+		{
+			result = ::GetBoundingRect(result, rect);
+		}
+	}
+	if (Closed)
+	{
+		result = ::GetBoundingRect(result,
+				PolylineSegBoundingRect(Nodes.back(), Nodes.front()));
+	}
+	return result;
+}
+
+
+std::vector<Point<double> > CadPolyline::GetManipulators() const
+{
+	vector<Point<double> > result;
+	Node prev;
+	for (list<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); prev = *i, i++)
+	{
+		if (i != Nodes.begin())
+		{
+			if (prev.Bulge != 0)
+				result.push_back(ArcMiddleFrom2PtAndBulge(prev.Point, i->Point, prev.Bulge));
+		}
+		result.push_back(i->Point);
+	}
+	if (Closed)
+	{
+		if (Nodes.back().Bulge != 0)
+		{
+			result.push_back(ArcMiddleFrom2PtAndBulge(Nodes.back().Point,
+					Nodes.front().Point, Nodes.back().Bulge));
+		}
+	}
+	return result;
+}
+
+
+void CadPolyline::UpdateManip(const Point<double> & pt, int id)
+{
+	int counter = 0;
+	list<Node>::iterator prev;
+	for (list<Node>::iterator i = Nodes.begin(); i != Nodes.end(); i++)
+	{
+		if (i != Nodes.begin())
+		{
+			if (prev->Bulge != 0)
+			{
+				if (counter == id)
+				{
+					CircleArc<double> arc = ArcFrom3Pt(prev->Point, pt,
+						i->Point);
+					prev->Bulge = arc.CalcBulge();
+					return;
+				}
+				counter++;
+			}
+		}
+		if (counter == id)
+		{
+			i->Point = pt;
+			return;
+		}
+		counter++;
+		prev = i;
+	}
+	if (Closed)
+	{
+		assert(counter == id);
+		CircleArc<double> arc = ArcFrom3Pt(Nodes.back().Point, pt,
+				Nodes.front().Point);
+		prev->Bulge = arc.CalcBulge();
+		return;
+	}
+	assert(0);
+}
+
+
+// adds magnet points for given segment not including endpoints
+static void AddPolylineSegPoints(const CadPolyline::Node & from,
+		const CadPolyline::Node & to,
+		vector<pair<Point<double>, PointType> > & result)
+{
+	if (from.Bulge == 0)
+	{
+		result.push_back(make_pair((from.Point + to.Point)/2, PointTypeMiddle));
+	}
+	else
+	{
+		Point<double> middle = ArcMiddleFrom2PtAndBulge(from.Point, to.Point, from.Bulge);
+		CircleArc<double> arc = ArcFrom3Pt(from.Point, middle, to.Point);
+		result.push_back(make_pair(middle, PointTypeMiddle));
+		result.push_back(make_pair(arc.Center, PointTypeCenter));
+	}
+
+}
+
+
+std::vector<std::pair<Point<double>, PointType> > CadPolyline::GetPoints() const
+{
+	vector<pair<Point<double>, PointType> > result;
+	Node prev;
+	for (list<Node>::const_iterator i = Nodes.begin(); i != Nodes.end();
+		prev = *i, i++)
+	{
+		if (i != Nodes.begin())
+			AddPolylineSegPoints(prev, *i, result);
+		result.push_back(make_pair(i->Point, PointTypeEndPoint));
+	}
+	if (Closed)
+		AddPolylineSegPoints(Nodes.back(), Nodes.front(), result);
+	return result;
+}
+
+
+void CadPolyline::Move(Point<double> displacement)
+{
+	for (list<Node>::iterator i = Nodes.begin(); i != Nodes.end(); i++)
+		i->Point += displacement;
+}
+
+
+size_t CadPolyline::Serialize(unsigned char * ptr) const
+{
+	size_t result = 0;
+	result += WritePtr(ptr, ID);
+	result += WritePtr(ptr, static_cast<int>(Closed));
+	result += WritePtr(ptr, Nodes.size());
+	for (list<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); i++)
+		result += WritePtr(ptr, *i);
+	return result;
+}
+
+
+void CadPolyline::Load(unsigned char const *& ptr, size_t & size)
+{
+	size_t numNodes;
+	int closed;
+	ReadPtr(ptr, closed, size);
+	Closed = closed;
+	ReadPtr(ptr, numNodes, size);
+	for (size_t i = 0; i < numNodes; i++)
+	{
+		Node node;
+		ReadPtr(ptr, node, size);
+		Nodes.push_back(node);
+	}
+}
+
+
 void CadCircle::Draw(HDC hdc, bool selected) const
 {
 	HPEN hpen = selected ? g_selectedLineHPen : g_lineHPen;
@@ -218,7 +505,7 @@ void CadCircle::Draw(HDC hdc, bool selected) const
 	if (SetBkColor(hdc, RGB(0, 0, 0)) == CLR_INVALID)
 		assert(0);
 	Point<int> center = WorldToScreen(Center);
-	int r = static_cast<int>(Radius * g_magification);
+	int r = static_cast<int>(Radius * g_magification + 0.5);
 	if (!Arc(hdc, center.X - r, center.Y - r, center.X + r + 1, center.Y + r + 1, 0, 0, 0, 0))
 		assert(0);
 }
@@ -361,22 +648,7 @@ void CadArc::Draw(HDC hdc, bool selected) const
 		assert(0);
 	if (SetBkColor(hdc, RGB(0, 0, 0)) == CLR_INVALID)
 		assert(0);
-	if (Radius != 0)
-	{
-		Point<int> center = WorldToScreen(Center);
-		Point<int> start = WorldToScreen(Start);
-		Point<int> end = WorldToScreen(End);
-		int r = static_cast<int>(Radius * g_magification);
-		if (!Ccw)
-		{
-			Point<int> temp = start;
-			start = end;
-			end = temp;
-		}
-		//MoveToEx(hdc, start.X, start.Y, 0);
-		Arc(hdc, center.X - r, center.Y - r, center.X + r + 1, center.Y + r + 1, start.X, start.Y, end.X, end.Y);
-		//LineTo(hdc, end.X + 1, end.Y);
-	}
+	DrawArc(hdc, *this);
 }
 
 
@@ -388,14 +660,13 @@ bool CadArc::IntersectsRect(double x1, double y1, double x2, double y2) const
 
 Rect<double> CadArc::GetBoundingRect() const
 {
-	return ArcsBoundingRect(Center.X, Center.Y, Radius, Start.X, Start.Y, End.X, End.Y, Ccw);
+	return CalcBoundingRect();
 }
 
 
 vector<Point<double> > CadArc::GetManipulators() const
 {
-	Point<double> middle;
-	CalcMiddlePointOfArc(Center.X, Center.Y, Radius, Start.X, Start.Y, End.X, End.Y, Ccw, middle.X, middle.Y);
+	Point<double> middle = CalcMiddlePoint();
 	vector<Point<double> > result(3);
 	result[0] = Start;
 	result[1] = middle;
@@ -406,8 +677,7 @@ vector<Point<double> > CadArc::GetManipulators() const
 
 void CadArc::UpdateManip(const Point<double> & pt, int id)
 {
-	Point<double> middle;
-	CalcMiddlePointOfArc(Center.X, Center.Y, Radius, Start.X, Start.Y, End.X, End.Y, Ccw, middle.X, middle.Y);
+	Point<double> middle = CalcMiddlePoint();
 	switch (id)
 	{
 	case 0: Start = pt; break;
@@ -423,8 +693,7 @@ void CadArc::UpdateManip(const Point<double> & pt, int id)
 
 vector<pair<Point<double>, PointType> > CadArc::GetPoints() const
 {
-	Point<double> middle;
-	CalcMiddlePointOfArc(Center.X, Center.Y, Radius, Start.X, Start.Y, End.X, End.Y, Ccw, middle.X, middle.Y);
+	Point<double> middle = CalcMiddlePoint();
 	vector<pair<Point<double>, PointType> > result(4);
 	result[0] = make_pair(Start, PointTypeEndPoint);
 	result[1] = make_pair(middle, PointTypeMiddle);
@@ -1265,6 +1534,311 @@ void DrawLinesTool::UpdatePrompt()
 }
 
 
+REGISTER_TOOL(L"pline", DrawPLineTool, false);
+
+
+void DrawPLineTool::Start()
+{
+	g_cursorType = CursorTypeManual;
+	g_cursorHandle = 0;
+	g_customCursorType = CustomCursorTypeCross;
+	g_canSnap = true;
+	g_console.SetPrompt(L"Specify first point:");
+	g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DrawPLineTool::RecalcFantomsHandler);
+	m_state = StateSelFirstPt;
+}
+
+
+bool DrawPLineTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+{
+	switch (m_state)
+	{
+	case StateSelFirstPt:
+		switch (msg)
+		{
+		case WM_LBUTTONDOWN:
+			g_console.LogCommand();
+			FeedFirstPoint(g_cursorWrld);
+			return true;
+		default:
+			return false;
+		}
+	case StateSelLineSecondPt:
+		switch (msg)
+		{
+		case WM_LBUTTONDOWN:
+			g_console.LogCommand();
+			FeedLineSecondPoint(g_cursorWrld);
+			return true;
+		case WM_KEYDOWN:
+			switch (wparam)
+			{
+			case VK_RETURN:
+				ExitTool();
+				return true;
+			default:
+				return false;
+			}
+		default:
+			return false;
+		}
+	case StateSelArcEndPt:
+		switch (msg)
+		{
+		case WM_LBUTTONDOWN:
+			g_console.LogCommand();
+			FeedArcEndPoint(g_cursorWrld);
+			return true;
+		case WM_KEYDOWN:
+			switch (wparam)
+			{
+			case VK_RETURN:
+				ExitTool();
+				return true;
+			default:
+				return false;
+			}
+		default:
+			return false;
+		}
+	case StateSelArcDirection:
+		switch (msg)
+		{
+		case WM_LBUTTONDOWN:
+			g_console.LogCommand();
+			FeedArcDirection(g_cursorWrld);
+			return true;
+		default:
+			return false;
+		}
+	default:
+		assert(0);
+		return false;
+	}
+}
+
+
+void DrawPLineTool::Command(const wstring & cmd)
+{
+	Point<double> pt;
+	switch (m_state)
+	{
+	case StateSelFirstPt:
+		if (ParsePoint2D(cmd, pt))
+			FeedFirstPoint(pt);
+		break;
+	case StateSelLineSecondPt:
+		if (IsKey(cmd, L"arc"))
+		{
+			g_fantomManager.DeleteFantoms(false);
+			m_fantomArc.reset(new CadArc);
+			*m_fantomArc = ArcFrom2PtAndNormTangent(m_fantomLine->Point1, m_arcDir, g_cursorWrld);
+			g_fantomManager.AddFantom(m_fantomArc.get());
+			g_fantomManager.AddFantom(m_fantomLine.get());
+			InvalidateRect(g_hclientWindow, 0, true);
+			m_state = StateSelArcEndPt;
+			SetPrompt();
+		}
+		else if (m_result && m_result->Nodes.size() >= 2 &&
+				IsKey(cmd, L"close"))
+		{
+			m_result->Closed = true;
+			m_result->Nodes.back().Bulge = 0;
+			InvalidateRect(g_hclientWindow, 0, true);
+			ExitTool();
+		}
+		else if (ParsePoint2D(cmd, pt))
+		{
+			FeedLineSecondPoint(pt);
+		}
+		break;
+	case StateSelArcEndPt:
+		if (IsKey(cmd, L"line"))
+		{
+			g_fantomManager.DeleteFantoms(false);
+			g_fantomManager.AddFantom(m_fantomLine.get());
+			InvalidateRect(g_hclientWindow, 0, true);
+			m_state = StateSelLineSecondPt;
+			SetPrompt();
+		}
+		else if (m_result && m_result->Nodes.size() >= 2 &&
+				IsKey(cmd, L"close"))
+		{
+			m_result->Closed = true;
+			*m_fantomArc = ArcFrom2PtAndNormTangent(m_fantomArc->Start, m_arcDir, m_result->Nodes.front().Point);
+			m_result->Nodes.back().Bulge = m_fantomArc->CalcBulge();
+			InvalidateRect(g_hclientWindow, 0, true);
+			ExitTool();
+		}
+		else if (IsKey(cmd, L"direction"))
+		{
+			m_state = StateSelArcDirection;
+			g_fantomManager.DeleteFantoms(false);
+			g_fantomManager.AddFantom(m_fantomLine.get());
+			InvalidateRect(g_hclientWindow, 0, true);
+			SetPrompt();
+		}
+		else if (ParsePoint2D(cmd, pt))
+		{
+			FeedArcEndPoint(pt);
+		}
+		break;
+	case StateSelArcDirection:
+		if (ParsePoint2D(cmd, pt))
+			FeedArcDirection(pt);
+		break;
+	}
+}
+
+
+void DrawPLineTool::Exiting()
+{
+	if (m_result == 0)
+		return;
+	if (m_result->Nodes.size() <= 1)
+	{
+		g_doc.Objects.remove(m_result);
+		delete m_result;
+	}
+	else
+	{
+		g_undoManager.AddWork(new AddObjectUndoItem(m_result, true));
+	}
+	m_result = 0;
+	g_fantomManager.RecalcFantomsHandler = Functor<void>();
+	m_fantomLine.reset(0);
+	m_fantomArc.reset(0);
+}
+
+
+void DrawPLineTool::SetPrompt()
+{
+	switch (m_state)
+	{
+	case StateSelLineSecondPt:
+		if (m_result && m_result->Nodes.size() >= 2)
+			g_console.SetPrompt(L"Specify next point or [Arc/Close]:");
+		else
+			g_console.SetPrompt(L"Specify next point or [Arc]:");
+		break;
+	case StateSelArcEndPt:
+		if (m_result && m_result->Nodes.size() >= 2)
+			g_console.SetPrompt(L"Specify end point of arc or [Line/Direction/Close]:");
+		else
+			g_console.SetPrompt(L"Specify end point of arc or [Line/Direction]:");
+		break;
+	case StateSelArcDirection:
+		g_console.SetPrompt(L"Specify tangent for arc's start point:");
+		break;
+	default:
+		assert(0);
+		break;
+	}
+}
+
+
+void DrawPLineTool::RecalcFantomsHandler()
+{
+	switch (m_state)
+	{
+	case StateSelFirstPt:
+		break;
+	case StateSelLineSecondPt:
+		m_fantomLine->Point2 = g_cursorWrld;
+		break;
+	case StateSelArcEndPt:
+		*m_fantomArc = ArcFrom2PtAndNormTangent(m_fantomArc->Start, m_arcDir, g_cursorWrld);
+		m_fantomLine->Point2 = g_cursorWrld;
+		break;
+	case StateSelArcDirection:
+		m_fantomLine->Point2 = g_cursorWrld;
+		break;
+	}
+}
+
+
+void DrawPLineTool::FeedFirstPoint(const Point<double> & pt)
+{
+	m_fantomLine.reset(new CadLine);
+	m_fantomLine->Point1 = pt;
+	m_fantomLine->Point2 = g_cursorWrld;
+	g_fantomManager.AddFantom(m_fantomLine.get());
+	m_state = StateSelLineSecondPt;
+	SetPrompt();
+	m_result = new CadPolyline;
+	g_doc.Objects.push_back(m_result);
+	CadPolyline::Node node;
+	node.Bulge = 0;
+	node.Point = pt;
+	m_result->Nodes.push_back(node);
+	InvalidateRect(g_hclientWindow, 0, true);
+}
+
+
+void DrawPLineTool::FeedLineSecondPoint(const Point<double> & pt)
+{
+	if (pt == m_fantomLine->Point1)
+	{
+		g_console.Log(L"Points must be different");
+		return;
+	}
+	CadPolyline::Node node;
+	node.Bulge = 0;
+	node.Point = pt;
+	m_arcDir = (pt - m_fantomLine->Point1).Normalize();
+	m_result->Nodes.push_back(node);
+	m_fantomLine->Point1 = pt;
+	m_fantomLine->Point2 = g_cursorWrld;
+	InvalidateRect(g_hclientWindow, 0, true);
+	SetPrompt();
+}
+
+
+void DrawPLineTool::FeedArcEndPoint(const Point<double> & pt)
+{
+	if (pt == m_fantomArc->Start)
+	{
+		g_console.Log(L"Points must be different");
+		return;
+	}
+	*m_fantomArc = ArcFrom2PtAndNormTangent(m_fantomArc->Start, m_arcDir, pt);
+	if (m_fantomArc->Radius == 0)
+	{
+		g_console.Log(L"Invalid arc");
+		return;
+	}
+	m_result->Nodes.back().Bulge = m_fantomArc->CalcBulge();
+	CadPolyline::Node node;
+	node.Bulge = 0;
+	node.Point = pt;
+	m_result->Nodes.push_back(node);
+	m_arcDir = DirVector((m_fantomArc->End - m_fantomArc->Center).Angle() + (m_fantomArc->Ccw ? M_PI/2 : -M_PI/2));
+	*m_fantomArc = ArcFrom2PtAndNormTangent(pt, m_arcDir, g_cursorWrld);
+	m_fantomLine->Point1 = pt;
+	m_fantomLine->Point2 = g_cursorWrld;
+	InvalidateRect(g_hclientWindow, 0, true);
+	SetPrompt();
+}
+
+
+void DrawPLineTool::FeedArcDirection(const Point<double> & endpt)
+{
+	if (endpt == m_fantomLine->Point1)
+	{
+		g_console.Log(L"Points must be different");
+		return;
+	}
+	m_arcDir = (endpt - m_fantomLine->Point1).Normalize();
+	m_state = StateSelArcEndPt;
+	m_fantomArc->Start = m_fantomLine->Point1;
+	m_fantomLine->Point2 = m_fantomArc->End = endpt;
+	m_fantomArc->Radius = 0;
+	g_fantomManager.AddFantom(m_fantomArc.get());
+	InvalidateRect(g_hclientWindow, 0, true);
+	SetPrompt();
+}
+
+
 REGISTER_TOOL(L"circle", DrawCircleTool, false);
 
 
@@ -1586,7 +2160,7 @@ void DrawCircleTool::Feed3PtThirdPoint(const Point<double> & pt)
 void DrawCircleTool::CalcCircleFrom3Pt(const Point<double> & thirdPoint)
 {
 	CircleArc<double> arc = ArcFrom3Pt(m_firstPoint, m_secondPoint, thirdPoint);
-	if (arc.Straight)
+	if (arc.Radius == 0)
 	{
 		if (m_cadCircle.get() != 0)
 		{
@@ -1726,11 +2300,7 @@ void DrawArcsTool::FeedThirdPoint(const Point<double> & pt)
 
 void DrawArcsTool::CalcArcFrom3Pt(const Point<double> & thirdPoint)
 {
-	CircleArc<double> arc = ArcFrom3Pt(m_fantomArc->Start, m_secondPoint, thirdPoint);
-	m_fantomArc->Center = arc.Center;
-	m_fantomArc->End = thirdPoint;
-	m_fantomArc->Ccw = arc.Ccw;
-	m_fantomArc->Radius = arc.Straight ? 0 : arc.Radius;
+	*m_fantomArc = ArcFrom3Pt(m_fantomArc->Start, m_secondPoint, thirdPoint);
 }
 
 
@@ -1970,6 +2540,7 @@ void PasteTool::Start()
 			case CadLine::ID: obj = new CadLine(); break;
 			case CadCircle::ID: obj = new CadCircle(); break;
 			case CadArc::ID: obj = new CadArc(); break;
+			case CadPolyline::ID: obj = new CadPolyline(); break;
 			default: assert(0); break;
 			}
 			obj->Load(ptr, size);
@@ -2049,7 +2620,7 @@ void PasteTool::FeedInsertionPoint(const Point<double> & pt)
 }
 
 
-REGISTER_TOOL(L"undo", UndoTool, false);
+REGISTER_TOOL(L"u", UndoTool, false);
 
 
 void UndoTool::Start()
@@ -2189,7 +2760,8 @@ void UndoManager::AddWork(UndoItem * item)
 	DeleteItems(m_pos);
 	m_items.push_back(item);
 	m_pos = m_items.end();
-	item->Do();
+	if (!item->IsDone())
+		item->Do();
 }
 
 bool UndoManager::CanUndo()

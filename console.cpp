@@ -172,6 +172,10 @@ LRESULT CALLBACK Console::EditWndProc(HWND hwnd, unsigned int msg, WPARAM wparam
 		default:
 			return CallWindowProc(m_defEditProc, hwnd, msg, wparam, lparam);
 		}
+	case WM_MOUSEWHEEL:
+	case WM_MOUSEHWHEEL:
+		SendMessage(g_hclientWindow, msg, wparam, lparam);
+		return 0;
 	default:
 		return CallWindowProc(m_defEditProc, hwnd, msg, wparam, lparam);
 	}

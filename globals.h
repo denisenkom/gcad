@@ -117,6 +117,38 @@ public:
 };
 
 
+class CadPolyline : public CadObject
+{
+public:
+	static const int ID = 4;
+	struct Node
+	{
+		Point<double> Point;
+		double Bulge;
+	};
+	std::list<Node> Nodes;
+	bool Closed;
+	CadPolyline() : Closed(false) {}
+	virtual void Draw(HDC hdc, bool selected) const;
+	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
+	virtual Rect<double> GetBoundingRect() const;
+	virtual std::vector<Point<double> > GetManipulators() const;
+	virtual void UpdateManip(const Point<double> & pt, int id);
+	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
+	virtual void Move(Point<double> displacement);
+	virtual CadPolyline * Clone() { return new CadPolyline(*this); }
+	void Assign(CadPolyline * rhs) { *this = *rhs; }
+	virtual size_t Serialize(unsigned char * ptr) const;
+	virtual void Load(unsigned char const *& ptr, size_t & size);
+protected:
+	virtual void Assign(CadObject * rhs)
+	{
+		assert(typeid(*rhs) == typeid(CadPolyline));
+		Assign(static_cast<CadPolyline*>(rhs));
+	}
+};
+
+
 class CadCircle : public CadObject
 {
 public:
@@ -137,15 +169,10 @@ public:
 };
 
 
-class CadArc : public CadObject
+class CadArc : public CadObject, public CircleArc<double>
 {
 public:
 	static const int ID = 3;
-	Point<double> Center;
-	Point<double> Start;
-	Point<double> End;
-	double Radius; // if == 0 than arc is straight line
-	bool Ccw;
 
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
@@ -159,6 +186,7 @@ public:
 	void Assign(CadArc * rhs);
 	virtual size_t Serialize(unsigned char * ptr) const;
 	virtual void Load(unsigned char const *& ptr, size_t & size);
+	CadArc & operator=(const CircleArc<double> & rhs) { CircleArc<double> & ca = *this; ca = rhs; return *this; }
 };
 
 
@@ -291,6 +319,36 @@ private:
 	void RecalcFantomsHandler();
 	void FeedPoint(const Point<double> & pt);
 	void UpdatePrompt();
+};
+
+
+class DrawPLineTool : public Tool
+{
+public:
+	DrawPLineTool() : m_arcDir(1, 0) {}
+	virtual void Start();
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual void Command(const std::wstring & cmd);
+	virtual void Exiting();
+private:
+	enum State
+	{
+		StateSelFirstPt,
+		StateSelLineSecondPt,
+		StateSelArcEndPt,
+		StateSelArcDirection,
+	};
+	State m_state;
+	std::auto_ptr<CadLine> m_fantomLine;
+	std::auto_ptr<CadArc> m_fantomArc;
+	CadPolyline * m_result;
+	Point<double> m_arcDir;
+	void SetPrompt();
+	void RecalcFantomsHandler();
+	void FeedFirstPoint(const Point<double> & pt);
+	void FeedLineSecondPoint(const Point<double> & pt);
+	void FeedArcEndPoint(const Point<double> & pt);
+	void FeedArcDirection(const Point<double> & endpt);
 };
 
 
@@ -518,13 +576,17 @@ public:
 	virtual ~UndoItem() {}
 	virtual void Do() = 0;
 	virtual void Undo() = 0;
+	bool IsDone() { return m_done; }
+protected:
+	bool m_done;
+	UndoItem(bool done) : m_done(done) {}
 };
 
 
 class ReverseUndoItem : public UndoItem
 {
 public:
-	ReverseUndoItem(UndoItem * base) : m_base(base) {}
+	ReverseUndoItem(UndoItem * base, bool done = false) : UndoItem(done), m_base(base) {}
 	virtual void Do() { m_base->Undo(); }
 	virtual void Undo() { m_base->Do(); }
 private:
@@ -535,6 +597,7 @@ private:
 class GroupUndoItem : public UndoItem
 {
 public:
+	GroupUndoItem(bool done = false) : UndoItem(done) {}
 	~GroupUndoItem();
 	virtual void Do();
 	virtual void Undo();
@@ -549,7 +612,9 @@ private:
 class AddObjectUndoItem : public UndoItem
 {
 public:
-	AddObjectUndoItem(CadObject * obj) : m_obj(obj), m_ownedObj(obj) { }
+	AddObjectUndoItem(CadObject * obj, bool done = false) :
+		UndoItem(done), m_obj(obj)
+		{ if (!done) m_ownedObj.reset(obj); }
 	virtual void Do();
 	virtual void Undo();
 private:
@@ -561,7 +626,8 @@ private:
 class AssignObjectUndoItem : public UndoItem
 {
 public:
-	AssignObjectUndoItem(CadObject * toObject, CadObject * fromObject) : m_toObject(toObject), m_fromObject(fromObject) {}
+	AssignObjectUndoItem(CadObject * toObject, CadObject * fromObject, bool done = false) :
+		UndoItem(done), m_toObject(toObject), m_fromObject(fromObject) {}
 	virtual void Do();
 	virtual void Undo();
 private:
