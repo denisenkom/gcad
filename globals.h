@@ -347,12 +347,14 @@ public:
 	Selector() : m_lassoOn(false), m_lassoDrawn(false) {}
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Cancel();
+	void DrawLasso(HDC hdc);
 	Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> SelectHandler;
 	Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)> DoneCallback;
 private:
 	bool m_multiselect;
 	bool m_lassoOn;
 	Point<double> m_lassoPt1, m_lassoPt2;
+	Point<int> m_lassoScnPt2;
 	bool m_lassoDrawn;
 	Tool * m_prevTool;
 	friend void BeginSelecting(const wchar_t * prompt, const Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)> & doneCallback, bool multiselect);

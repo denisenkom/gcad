@@ -929,7 +929,7 @@ bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 	case WM_LBUTTONDOWN:
 		if (m_multiselect)
 		{
-			m_lassoPt2 = m_lassoPt1 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
+			m_lassoPt2 = m_lassoPt1 = ScreenToWorld(g_cursorScn);
 			m_lassoOn = true;
 		}
 		return true;
@@ -943,17 +943,15 @@ bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 			else
 				SelectObject(hdc, g_lineHPen);
 			SetROP2(hdc, R2_XORPEN);
-			Point<int> scnPt1 = WorldToScreen(m_lassoPt1);
-			Point<int> scnPt2 = WorldToScreen(m_lassoPt2);
 			if (m_lassoDrawn)
-				MyRectangle(hdc, scnPt1, scnPt2);
-			m_lassoPt2 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
-			scnPt2 = g_cursorScn;
+				MyRectangle(hdc, WorldToScreen(m_lassoPt1), m_lassoScnPt2);
+			m_lassoPt2 = ScreenToWorld(g_cursorScn);
 			if (m_lassoPt2.X < m_lassoPt1.X)
 				SelectObject(hdc, g_selectedLineHPen);
 			else
 				SelectObject(hdc, g_lineHPen);
-			MyRectangle(hdc, scnPt1, scnPt2);
+			MyRectangle(hdc, WorldToScreen(m_lassoPt1), g_cursorScn);
+			m_lassoScnPt2 = g_cursorScn;
 			m_lassoDrawn = true;
 			return true;
 		}
@@ -1071,6 +1069,21 @@ void Selector::Cancel()
 	if (g_selected.size() != 0)
 		g_selected.clear();
 }
+
+
+void Selector::DrawLasso(HDC hdc)
+{
+	if (m_lassoDrawn)
+	{
+		SelectObject(hdc, GetStockObject(NULL_BRUSH));
+		if (m_lassoPt2.X < m_lassoPt1.X)
+			SelectObject(hdc, g_selectedLineHPen);
+		else
+			SelectObject(hdc, g_lineHPen);
+		MyRectangle(hdc, WorldToScreen(m_lassoPt1), m_lassoScnPt2);
+	}
+}
+
 
 bool DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {

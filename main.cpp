@@ -161,6 +161,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 		}
 
 		g_defaultTool.DrawManipulators(hdc);
+		g_selector.DrawLasso(hdc);
 
 		if (g_cursorDrawn)
 			DrawCursor(hdc);
@@ -348,6 +349,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 						if (g_cursorDrawn)
 							DrawCursor(hdc);
 						g_fantomManager.DrawFantoms(hdc);
+						g_selector.DrawLasso(hdc);
 					}
 					catch (WindowsError &)
 					{
@@ -369,6 +371,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 							DrawCursor(hdc);
 						g_fantomManager.RecalcFantoms();
 						g_fantomManager.DrawFantoms(hdc);
+						g_selector.DrawLasso(hdc);
 					}
 					catch (WindowsError &)
 					{
@@ -391,6 +394,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 					if (g_cursorDrawn)
 						DrawCursor(hdc);
 					g_fantomManager.DrawFantoms(hdc);
+					g_selector.DrawLasso(hdc);
 				}
 				catch (WindowsError &)
 				{
@@ -412,6 +416,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 						DrawCursor(hdc);
 					g_fantomManager.RecalcFantoms();
 					g_fantomManager.DrawFantoms(hdc);
+					g_selector.DrawLasso(hdc);
 				}
 				catch (WindowsError &)
 				{
