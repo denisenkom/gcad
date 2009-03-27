@@ -119,7 +119,7 @@ private:
 };
 
 
-class MoveTool : public Tool
+class MoveTool : public virtual Tool
 {
 public:
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
@@ -141,6 +141,19 @@ private:
 	void CalcPositions(const Point<double> & pt);
 	void FeedBasePoint(const Point<double> & pt);
 	void FeedDestPoint(const Point<double> & pt);
+};
+
+
+class TrimTool : public Tool
+{
+public:
+	virtual void Start();
+	virtual void Exiting();
+private:
+	void SelectedEdgesHandler(CadObject*, size_t);
+	void SelectedObjectToTrimHandler(CadObject*, size_t);
+	void MakeTrim(CadObject * obj);
+	std::vector<CadObject*> m_bounds;
 };
 
 

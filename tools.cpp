@@ -8,7 +8,10 @@
 #include "tools.h"
 #include "console.h"
 #include <loki/functor.h>
+#include <loki/multimethods.h>
 #include <loki/typelistmacros.h>
+#include <algorithm>
+#include <functional>
 
 
 using namespace std;
@@ -75,7 +78,7 @@ void DrawLinesTool::Start()
 }
 
 
-REGISTER_TOOL(L"line", DrawLinesTool, false);
+REGISTER_TOOL(L"line", DrawLinesTool);
 
 
 void DrawLinesTool::Command(const std::wstring & cmd)
@@ -128,7 +131,7 @@ void DrawLinesTool::UpdatePrompt()
 }
 
 
-REGISTER_TOOL(L"pline", DrawPLineTool, false);
+REGISTER_TOOL(L"pline", DrawPLineTool);
 
 
 void DrawPLineTool::Start()
@@ -433,7 +436,7 @@ void DrawPLineTool::FeedArcDirection(const Point<double> & endpt)
 }
 
 
-REGISTER_TOOL(L"circle", DrawCircleTool, false);
+REGISTER_TOOL(L"circle", DrawCircleTool);
 
 
 bool DrawCircleTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
@@ -753,7 +756,7 @@ void DrawCircleTool::Feed3PtThirdPoint(const Point<double> & pt)
 
 void DrawCircleTool::CalcCircleFrom3Pt(const Point<double> & thirdPoint)
 {
-	CircleArc<double> arc = ArcFrom3Pt(m_firstPoint, m_secondPoint, thirdPoint);
+	CircleArc arc = ArcFrom3Pt(m_firstPoint, m_secondPoint, thirdPoint);
 	if (arc.Radius == 0)
 	{
 		if (m_cadCircle.get() != 0)
@@ -776,7 +779,7 @@ void DrawCircleTool::CalcCircleFrom3Pt(const Point<double> & thirdPoint)
 }
 
 
-REGISTER_TOOL(L"arc", DrawArcsTool, false);
+REGISTER_TOOL(L"arc", DrawArcsTool);
 
 
 bool DrawArcsTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
@@ -898,7 +901,8 @@ void DrawArcsTool::CalcArcFrom3Pt(const Point<double> & thirdPoint)
 }
 
 
-REGISTER_TOOL(L"move", MoveTool, true);
+typedef SelectWrapperTool<MoveTool> WrappedMoveTool;
+REGISTER_TOOL(L"move", WrappedMoveTool);
 
 
 bool MoveTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
@@ -1031,4 +1035,389 @@ void MoveTool::FeedDestPoint(const Point<double> & pt)
 	}
 	g_undoManager.AddWork(group.release());
 	ExitTool();
+}
+
+
+REGISTER_TOOL(L"trim", TrimTool);
+
+
+void TrimTool::Start()
+{
+	BeginSelecting(L"Select cutting edges:", Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)>(this, &TrimTool::SelectedEdgesHandler), true);
+}
+
+
+void TrimTool::Exiting()
+{
+	g_selected.clear();
+}
+
+
+void TrimTool::SelectedEdgesHandler(CadObject*, size_t)
+{
+	g_console.LogCommand();
+	if (g_selected.size() == 0)
+	{
+		ExitTool();
+		return;
+	}
+	m_bounds.assign(g_selected.begin(), g_selected.end());
+	BeginSelecting(L"Select object to trim:", Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)>(this, &TrimTool::SelectedObjectToTrimHandler), false);
+}
+
+
+void TrimTool::SelectedObjectToTrimHandler(CadObject * obj, size_t num)
+{
+	assert(num == 1);
+	g_console.LogCommand();
+	MakeTrim(obj);
+	BeginSelecting(L"Select object to trim:", Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)>(this, &TrimTool::SelectedObjectToTrimHandler), false);
+}
+
+
+template <class T>
+vector<Point<double> > Intersect(const T & lhs, const CadPolyline & polyline1)
+{
+	vector<Point<double> > res;
+	CadPolyline2 polyline = polyline1;
+	for (CadPolyline2Iterator i = polyline.Begin(); i != polyline.End(); i++)
+	{
+		vector<Point<double> > subres = Intersect2(lhs, **i);
+		res.insert(res.end(), subres.begin(), subres.end());
+	}
+	return res;
+}
+
+
+struct Intersector
+{
+	template <class T1, class T2>
+	vector<Point<double> > Fire(const T1 & lhs, const T2 & rhs)
+	{
+		return Intersect(lhs, rhs);
+	}
+
+	template<class T>
+	vector<Point<double> > Fire(const CadPolyline & polyline, const T & rhs)
+	{
+		assert(0);
+	}
+
+	vector<Point<double> > Fire(const CadPolyline & lhs, const CadPolyline & rhs)
+	{
+		assert(0);
+	}
+
+	vector<Point<double> > OnError(const CadObject & lhs, const CadObject & rhs) { assert(0); }
+};
+
+vector<Point<double> > Intersect2(const CadObject & lhs, const CadObject & rhs)
+{
+	return Loki::StaticDispatcher<Intersector,
+		const CadObject, LOKI_TYPELIST_4(const CadLine, const CadCircle, const CadArc, const CadPolyline),
+		true,
+		const CadObject, LOKI_TYPELIST_4(const CadLine, const CadCircle, const CadArc, const CadPolyline),
+		vector<Point<double> > >::Go(lhs, rhs, Intersector());
+}
+
+
+template <class T>
+vector<Point<double> > Intersect2(const T & lhs, const CadObject & rhs)
+{
+	struct RhsDispatch : IConstCadObjVisitor
+	{
+		RhsDispatch(const T & lhs) : m_lhs(lhs) {}
+		const T & m_lhs;
+		vector<Point<double> > m_result;
+
+		virtual void Visit(const CadLine & rhs)
+		{
+			m_result = Intersect(m_lhs, rhs);
+		}
+		virtual void Visit(const CadCircle & rhs)
+		{
+			m_result = Intersect(m_lhs, rhs);
+		}
+		virtual void Visit(const CadArc & rhs)
+		{
+			m_result = Intersect(m_lhs, rhs);
+		}
+		virtual void Visit(const CadPolyline & rhs)
+		{
+			m_result = Intersect(m_lhs, rhs);
+		}
+	} dispatch(lhs);
+	rhs.Accept(dispatch);
+	return dispatch.m_result;
+}
+
+
+class TrimVisitor : public ICadObjVisitor
+{
+	const vector<CadObject *> & m_bounds;
+public:
+	TrimVisitor(const vector<CadObject *> & bounds) : m_bounds(bounds) {}
+private:
+	template <class T>
+	struct Comp : binary_function<Point<double>, Point<double>, bool>
+	{
+		Comp(const T & line) : m_line(line) {}
+		bool operator()(const Point<double> & lhs, const Point<double> & rhs) const
+		{
+			return m_line.PointDist(lhs) < m_line.PointDist(rhs);
+		}
+		const T & m_line;
+	};
+
+	template <class T>
+	void GenericTrim(T & line)
+	{
+		vector<Point<double> > intersections;
+		for (vector<CadObject*>::const_iterator i = m_bounds.begin();
+			i != m_bounds.end(); i++)
+		{
+			vector<Point<double> > res = Intersect2(line, **i);
+			// removing intersections with end points
+			for (vector<Point<double> >::const_iterator i = res.begin();
+				i != res.end(); i++)
+			{
+				if (EqualsEpsilon(line.GetStart(), *i) || EqualsEpsilon(line.GetEnd(), *i))
+					continue;
+				intersections.push_back(*i);
+			}
+		}
+		if (intersections.size() == 0)
+			return;
+		// sorting intersection points by distance from first point of line
+		sort(intersections.begin(), intersections.end(), Comp<T>(line));
+		// searching between which consecutive intersections lays cursor point
+		vector<Point<double> >::const_iterator pos = find_if(intersections.begin(),
+				intersections.end(), bind1st(Comp<T>(line), g_cursorWrld));
+		// making trimming
+		if (pos == intersections.end())
+		{
+			// cursor is between last intersection and end point, trimming end of line
+			line.SetEnd(intersections.back());
+		}
+		else if (pos == intersections.begin())
+		{
+			// cursor is between start point of line and first intersection,
+			// trimming beginning of line
+			line.SetStart(intersections.front());
+		}
+		else
+		{
+			// cursor in between two intersections, splitting line
+			T * newline = new T(line);
+			newline->SetStart(*pos);
+			line.SetEnd(*(pos - 1));
+			g_doc.Objects.push_back(newline);
+		}
+	}
+
+	virtual void Visit(CadLine & line)
+	{
+		GenericTrim(line);
+	}
+
+	virtual void Visit(CadArc & arc)
+	{
+		GenericTrim(arc);
+	}
+
+	struct CircleComp : binary_function<Point<double>, Point<double>, bool>
+	{
+		CircleComp(const Point<double> & center) : m_center(center) {}
+		bool operator()(const Point<double> & lhs, const Point<double> & rhs) const
+		{
+			return (lhs - m_center).Angle() < (rhs - m_center).Angle();
+		}
+		Point<double> m_center;
+	};
+
+	virtual void Visit(CadCircle & circle)
+	{
+		vector<Point<double> > intersections;
+		for (vector<CadObject*>::const_iterator i = m_bounds.begin();
+			i != m_bounds.end(); i++)
+		{
+			vector<Point<double> > res = Intersect2(circle, **i);
+			intersections.insert(intersections.end(), res.begin(), res.end());
+		}
+		if (intersections.size() == 0)
+			return;
+		if (intersections.size() < 2)
+		{
+			g_console.Log(L"Circle must be intersected in, at least, two points");
+			return;
+		}
+		// sorting intersections by angle
+		sort(intersections.begin(), intersections.end(), CircleComp(circle.Center));
+		// searching where cursor point is
+		Point<double> pt1, pt2;
+		vector<Point<double> >::const_iterator iint = find_if(intersections.begin(),
+				intersections.end(), bind1st(CircleComp(circle.Center), g_cursorWrld));
+		if (iint == intersections.begin() || iint == intersections.end())
+		{
+			pt1 = intersections.front();
+			pt2 = intersections.back();
+		}
+		else
+		{
+			pt1 = *iint;
+			pt2 = *(iint-1);
+		}
+		// replacing circle with arc
+		list<CadObject*>::iterator pos = find(g_doc.Objects.begin(), g_doc.Objects.end(), &circle);
+		assert(pos != g_doc.Objects.end());
+		auto_ptr<CadArc> arc(new CadArc(circle, pt1, pt2, true));
+		delete *pos;
+		*pos = arc.release();
+	}
+
+	void AddBeginCutted(CadPolyline2 & polyline,
+			pair<CadPolyline2::Iterator, Point<double> > intersection)
+	{
+		IPolylineSeg * cutted = (*intersection.first)->CutBegin(intersection.second);
+		if (cutted)
+			polyline.m_elements.push_back(cutted);
+	}
+
+	void AddEndCutted(CadPolyline2 & polyline,
+			pair<CadPolyline2::Iterator, Point<double> > intersection)
+	{
+		IPolylineSeg * cutted = (*intersection.first)->CutEnd(intersection.second);
+		if (cutted)
+			polyline.m_elements.push_back(cutted);
+	}
+
+	virtual void Visit(CadPolyline & polyline1)
+	{
+		CadPolyline2 polyline = polyline1;
+		vector<pair<CadPolyline2::Iterator, Point<double> > > intersections;
+		for (vector<CadObject*>::const_iterator ibound = m_bounds.begin();
+			ibound != m_bounds.end(); ibound++)
+		{
+			for (CadPolyline2::Iterator iseg = polyline.Begin();
+				iseg != polyline.End(); iseg++)
+			{
+				vector<Point<double> > subres = Intersect2(static_cast<const CadObject&>(**iseg), **ibound);
+				for (vector<Point<double> >::const_iterator ipoint = subres.begin();
+					ipoint != subres.end(); ipoint++)
+				{
+					if (!polyline.Closed() &&
+							(EqualsEpsilon(polyline.Front()->GetStart(), *ipoint) ||
+									EqualsEpsilon(polyline.Back()->GetEnd(), *ipoint)))
+					{
+						continue;
+					}
+					intersections.push_back(make_pair(iseg, *ipoint));
+				}
+			}
+		}
+		if (intersections.size() == 0)
+			return;
+		if (polyline.Closed() && intersections.size() < 2)
+		{
+			g_console.Log(L"Closed polyline must be intersected in, at least, two points");
+			return;
+		}
+		// sorting intersections by range
+		struct Private1
+		{
+			static bool Lesser(pair<CadPolyline2::Iterator, Point<double> > lhs, pair<CadPolyline2::Iterator, Point<double> > rhs)
+			{
+				if (lhs.first == rhs.first)
+					return (*lhs.first)->PointDist(lhs.second) < (*lhs.first)->PointDist(rhs.second);
+				else
+					return lhs.first < rhs.first;
+			}
+		};
+		sort(intersections.begin(), intersections.end(), ptr_fun(Private1::Lesser));
+		// finding where cursor
+		// pos points to nearest intersection after cursor
+		// pos-1 points to nearest intersection before cursor
+		struct Private2
+		{
+			static bool Greater(pair<CadPolyline2::Iterator, Point<double> > lhs, Point<double> rhs)
+			{
+				return (*lhs.first)->PointDist(lhs.second) > (*lhs.first)->PointDist(rhs);
+			}
+		};
+		vector<pair<CadPolyline2::Iterator, Point<double> > >::iterator pos =
+			find_if(intersections.begin(), intersections.end(), bind2nd(ptr_fun(Private2::Greater), g_cursorWrld));
+		if (polyline.Closed())
+		{
+			if (pos == intersections.begin() || pos == intersections.end())
+			{
+				CadPolyline2 newpl;
+				newpl.m_closed = false;
+				AddBeginCutted(newpl, intersections.front());
+				for (CadPolyline2::Iterator i = intersections.front().first + 1; i != intersections.back().first; i++)
+					newpl.m_elements.push_back((*i)->Clone());
+				AddEndCutted(newpl, intersections.back());
+				polyline1.Assign(newpl.ToCadPolyline());
+			}
+			else
+			{
+				CadPolyline2 newpl;
+				newpl.m_closed = false;
+				AddBeginCutted(newpl, *pos);
+				for (CadPolyline2::Iterator i = pos->first + 1; i != polyline.End(); i++)
+					newpl.m_elements.push_back((*i)->Clone());
+				for (CadPolyline2::Iterator i = polyline.Begin(); i != (pos-1)->first; i++)
+					newpl.m_elements.push_back((*i)->Clone());
+				AddEndCutted(newpl, *(pos-1));
+				polyline1.Assign(newpl.ToCadPolyline());
+			}
+		}
+		else
+		{
+			if (pos == intersections.begin())
+			{
+				// cutting beginning
+				CadPolyline2 newpl;
+				newpl.m_closed = false;
+				AddBeginCutted(newpl, intersections.front());
+				for (CadPolyline2::Iterator i = intersections.front().first + 1; i != polyline.End(); i++)
+					newpl.m_elements.push_back((*i)->Clone());
+				polyline1.Assign(newpl.ToCadPolyline());
+			}
+			else if (pos == intersections.end())
+			{
+				// cutting ending
+				CadPolyline2 newpl;
+				newpl.m_closed = false;
+				for (CadPolyline2::Iterator i = polyline.Begin(); i != intersections.back().first; i++)
+					newpl.m_elements.push_back((*i)->Clone());
+				AddEndCutted(newpl, intersections.back());
+				polyline1.Assign(newpl.ToCadPolyline());
+			}
+			else
+			{
+				// cutting middle
+				CadPolyline2 newpl1;
+				newpl1.m_closed = false;
+				for (CadPolyline2::Iterator i = polyline.Begin(); i != (pos-1)->first; i++)
+					newpl1.m_elements.push_back((*i)->Clone());
+				AddEndCutted(newpl1, *(pos-1));
+				polyline1.Assign(newpl1.ToCadPolyline());
+
+				CadPolyline2 newpl2;
+				newpl2.m_closed = false;
+				AddBeginCutted(newpl2, *pos);
+				for (CadPolyline2::Iterator i = pos->first + 1; i != polyline.End(); i++)
+					newpl2.m_elements.push_back((*i)->Clone());
+				g_doc.Objects.push_back(new CadPolyline(newpl2.ToCadPolyline()));
+			}
+		}
+	}
+};
+
+
+void TrimTool::MakeTrim(CadObject * obj)
+{
+	TrimVisitor trimmer(m_bounds);
+	obj->Accept(trimmer);
+	InvalidateRect(g_hclientWindow, 0, true);
 }
