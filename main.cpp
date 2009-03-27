@@ -114,6 +114,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 		if (!DeleteObject(g_selectedManipHBrush))
 			assert(0);
 		g_selector.SelectHandler = Loki::Functor<void, LOKI_TYPELIST_2(CadObject *, bool)>();
+		g_selector.DoneCallback = Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)>();
 		g_fantomManager.RecalcFantomsHandler = Loki::Functor<void>();
 		return 0;
 	case WM_PAINT:
@@ -748,6 +749,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			SendMessageW(g_htoolbarMod, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
 			const TBBUTTON buttons[] = {
 				{0, ID_MODIFY_MOVE, TBSTATE_ENABLED, 0, 0, 0 },
+				{1, ID_MODIFY_TRIM, TBSTATE_ENABLED, 0, 0, 0 },
 				};
 			if (!SendMessageW(g_htoolbarMod, TB_ADDBUTTONS, sizeof(buttons) / sizeof(buttons[0]), reinterpret_cast<LPARAM>(buttons)))
 				return -1;
@@ -873,6 +875,9 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			break;
 		case ID_MODIFY_MOVE:
 			ExecuteCommand(L"move");
+			break;
+		case ID_MODIFY_TRIM:
+			ExecuteCommand(L"trim");
 			break;
 		case ID_EDIT_CUT:
 			ExecuteCommand(L"cutclip");
