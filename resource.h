@@ -20,6 +20,7 @@
 #define ID_DRAW_ARCS                    40009
 #define ID_DRAW_PLINE                   40010
 #define ID_MODIFY_MOVE                  40200
+#define ID_MODIFY_TRIM                  40201
 #define ID_EDIT_UNDO                    40100
 #define ID_EDIT_REDO                    40101
 #define ID_EDIT_CUT                     40102
