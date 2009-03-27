@@ -7,6 +7,7 @@
 #include "dxf.h"
 #include "globals.h" // for LocalAllocStr and GetWinErrorStr
 #include <string>
+#include <limits>
 
 
 class DxfReader
@@ -332,7 +333,7 @@ void ImportDxf(HWND hwnd)
 								throw wstring(L"File has invalid format");
 						}
 						flags = 0;
-						assert(result->Nodes.size() <= LONG_MAX);
+						assert(result->Nodes.size() <= static_cast<size_t>(numeric_limits<long>::max()));
 						if (numVerts <= static_cast<long>(result->Nodes.size()))
 							throw wstring(L"File has invalid format");
 						result->Nodes.push_back(CadPolyline::Node());
@@ -349,7 +350,7 @@ void ImportDxf(HWND hwnd)
 						break;
 					}
 				}
-				assert(result->Nodes.size() <= LONG_MAX);
+				assert(result->Nodes.size() <= static_cast<size_t>(numeric_limits<long>::max()));
 				if (static_cast<long>(result->Nodes.size()) != numVerts)
 					throw wstring(L"File has invalid format");
 				groupItem->AddItem(new AddObjectUndoItem(result.release()));
