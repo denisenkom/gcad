@@ -5,7 +5,48 @@
 #include <algorithm>
 #include <cmath>
 #include <cassert>
+#include <limits>
 #include <utility>
+#include <vector>
+
+
+const double EPSILON = 0.00000001;
+
+
+inline double RoundEpsilon(double x)
+{
+	return floor(x / EPSILON + 0.5) * EPSILON;
+}
+
+
+inline bool EqualsEpsilon(double lhs, double rhs)
+{
+	return std::fabs(lhs - rhs) <= EPSILON;
+}
+
+
+class NormalAngle
+{
+	double m_ang;
+public:
+	explicit NormalAngle(double ang) : m_ang(ang) {}
+	operator double() { return m_ang; }
+	NormalAngle operator-() { return NormalAngle(-m_ang); }
+	friend NormalAngle operator+(NormalAngle lhs, NormalAngle rhs)
+	{
+		double res = lhs.m_ang + rhs.m_ang;
+		if (res > M_PI)
+			res -= M_2_PI;
+		else if (res <= -M_PI)
+			res += M_2_PI;
+		return NormalAngle(res);
+	}
+	friend NormalAngle operator-(NormalAngle lhs, NormalAngle rhs)
+	{
+		return operator+(lhs, -rhs);
+	}
+	double To2PiAng() { return m_ang >= 0 ? m_ang : m_ang + M_2_PI; }
+};
 
 
 template <typename T>
@@ -61,9 +102,9 @@ struct Point
 		return *this/Length();
 	}
 
-	T Angle() const
+	NormalAngle Angle() const
 	{
-		return std::atan2(Y, X);
+		return NormalAngle(std::atan2(Y, X));
 	}
 
 	Point<T> Rotate(T angle) const
@@ -75,6 +116,11 @@ struct Point
 	friend Point<T> DirVector(T angle)
 	{
 		return Point<T>(std::cos(angle), std::sin(angle));
+	}
+
+	friend Point<T> NegateAngle(Point<T> dir)
+	{
+		return Point<T>(dir.X, -dir.Y);
 	}
 
 	friend Point<T> operator-(const Point<T> & lhs, const Point<T> & rhs)
@@ -104,6 +150,17 @@ struct Point
 	{
 		return rhs * lhs;
 	}
+
+	friend T DotProduct(const Point<T> & lhs, const Point<T> & rhs)
+	{
+		return lhs.X * rhs.X + lhs.Y * rhs.Y;
+	}
+
+	friend bool EqualsEpsilon(Point<T> lhs, Point<T> rhs)
+	{
+		return EqualsEpsilon(lhs.X, rhs.X) &&
+			EqualsEpsilon(lhs.Y, rhs.Y);
+	}
 };
 
 
@@ -126,6 +183,34 @@ struct Rect
 	{
 		return Rect<T>(std::min(Pt1.X, Pt2.X), std::min(Pt1.Y, Pt2.Y),
 				std::max(Pt1.X, Pt2.X), std::max(Pt1.Y, Pt2.Y));
+	}
+
+	// must be normalized
+	bool Contains(const Point<T> & pt)
+	{
+		return Pt1.X <= pt.X && pt.X <= Pt2.X &&
+			Pt1.Y <= pt.Y && pt.Y <= Pt2.Y;
+	}
+
+	// must be normalized
+	bool ContainsWithEpsilon(const Point<T> & pt)
+	{
+		return Pt1.X - EPSILON <= pt.X &&
+			pt.X <= Pt2.X + EPSILON &&
+			Pt1.Y - EPSILON <= pt.Y &&
+			pt.Y <= Pt2.Y + EPSILON;
+	}
+
+	// must be normalized
+	bool ContainsNonInclusive(const Point<T> & pt)
+	{
+		return Pt1.X < pt.X && pt.X < Pt2.X &&
+			Pt1.Y < pt.Y && pt.Y < Pt2.Y;
+	}
+
+	bool IsNormalized()
+	{
+		return Pt1.X <= Pt2.X && Pt1.Y <= Pt2.Y;
 	}
 
 	Point<T> Pt1;
@@ -297,76 +382,148 @@ public:
 		return Point<scalar>(lhs[0][0]*rhs.X + lhs[0][1]*rhs.Y + lhs[0][2],
 				lhs[1][0]*rhs.X + lhs[1][1]*rhs.Y + lhs[1][2]);
 	}
+
+	friend Matrix3<scalar> DisplaceMatrix(Point<scalar> vector)
+	{
+		return Matrix3<scalar>(
+				1, 0, vector.X,
+				0, 1, vector.Y,
+				0, 0, 1);
+	}
+
+	// vector must be normalized
+	friend Matrix3<scalar> RotationMatrix(Point<scalar> dir)
+	{
+		return Matrix3<double>(
+				dir.X, -dir.Y, 0,
+				dir.Y,  dir.X, 0,
+				0, 0, 1);
+	}
+
+	friend Matrix3<scalar> RotationMatrix(scalar angle)
+	{
+		return RotationMatrix(DirVector(angle));
+	}
 };
 
-template<typename scalar> // float or double
-bool ArcIntersectsRect(scalar cx, scalar cy, scalar r, scalar p1x, scalar p1y, scalar p2x, scalar p2y, bool ccw, scalar x1, scalar y1, scalar x2, scalar y2);
 
-template<typename scalar> // float or double
-inline Rect<scalar> ArcsBoundingRect(scalar cx, scalar cy, scalar r, scalar p1x, scalar p1y, scalar p2x, scalar p2y, bool ccw);
-
-template<class scalar>
-struct CircleArc
+// checks if angle inside arc
+// range is started from startAndle and sweeps CCW to endAngle
+inline bool AngInArc(NormalAngle angle, NormalAngle startAngle, NormalAngle endAngle)
 {
-	Point<scalar> Center;
-	scalar Radius;
-	Point<scalar> Start;
-	Point<scalar> End;
+	if (startAngle < endAngle)
+		return startAngle <= angle && angle <= endAngle;
+	else
+		return angle <= endAngle || startAngle <= angle;
+}
+
+
+struct Circle
+{
+	Point<double> Center;
+	double Radius;
+
+	friend bool operator==(Circle lhs, Circle rhs)
+	{
+		return lhs.Center == rhs.Center && lhs.Radius == rhs.Radius;
+	}
+};
+
+
+//template<class scalar>
+struct CircleArc : public Circle
+{
+	Point<double> Start;
+	Point<double> End;
 	bool Ccw;
 
-	Point<scalar> CalcMiddlePoint() const
+	CircleArc() {}
+	CircleArc(Circle circle, Point<double> start, Point<double> end, bool ccw) :
+		Circle(circle), Start(start), End(end), Ccw(ccw) {}
+
+	Point<double> CalcMiddlePoint() const
 	{
 		// determining angles of arc end points
-		scalar angle1 = (Start - Center).Angle();
-		scalar angle2 = (End - Center).Angle();
+		double angle1 = (Start - Center).Angle();
+		double angle2 = (End - Center).Angle();
 		// ensuring CCW direction from angle1 to angle2
 		if (!Ccw)
 		{
-			scalar temp = angle1;
+			double temp = angle1;
 			angle1 = angle2;
 			angle2 = temp;
 		}
-		scalar delta = angle2 - angle1;
+		double delta = angle2 - angle1;
 		if (delta < 0)
 			delta += 2 * M_PI;
 		return DirVector(angle1 + delta/2) * Radius + Center;
 	}
 
-	scalar CalcBulge() const
+	double CalcBulge() const
 	{
-		scalar rel = (CalcMiddlePoint() - Start).Length() / ((End - Start).Length() / 2);
+		double rel = (CalcMiddlePoint() - Start).Length() / ((End - Start).Length() / 2);
 		return (Ccw ? 1 : -1) * std::sqrt(rel*rel - 1);
 	}
 
-	Rect<scalar> CalcBoundingRect() const
+	bool ContainsAng(NormalAngle angle) const
 	{
-		return ArcsBoundingRect<scalar>(Center.X, Center.Y, Radius,
-				Start.X, Start.Y, End.X, End.Y, Ccw);
+		NormalAngle startAng = (Start - Center).Angle();
+		NormalAngle endAng = (End - Center).Angle();
+		if (!Ccw)
+			std::swap(startAng, endAng);
+		return AngInArc(angle, startAng, endAng);
 	}
 
-	friend CircleArc ArcFrom3Pt(const Point<scalar> & p1, const Point<scalar> & p2, const Point<scalar> & p3)
+	bool ContainsAngWithEpsilon(NormalAngle angle) const
+	{
+		NormalAngle startAng = (Start - Center).Angle();
+		NormalAngle endAng = (End - Center).Angle();
+		if (!Ccw)
+			std::swap(startAng, endAng);
+		return AngInArc(angle, startAng - NormalAngle(EPSILON), endAng + NormalAngle(EPSILON));
+	}
+
+	Rect<double> CalcBoundingRect() const
+	{
+		Rect<double> result = Rect<double>(Start, End).Normalized();
+		NormalAngle startAngle = (Start - Center).Angle();
+		NormalAngle endAngle = (End - Center).Angle();
+		if (!Ccw)
+			std::swap(startAngle, endAngle);
+		if (AngInArc(NormalAngle(0.0), startAngle, endAngle))
+			result.Pt2.X = Center.X + Radius;
+		if (AngInArc(NormalAngle(M_PI / 2), startAngle, endAngle))
+			result.Pt2.Y = Center.Y + Radius;
+		if (AngInArc(NormalAngle(M_PI), startAngle, endAngle))
+			result.Pt1.X = Center.X - Radius;
+		if (AngInArc(NormalAngle(-M_PI / 2), startAngle, endAngle))
+			result.Pt1.Y = Center.Y - Radius;
+		return result;
+	}
+
+	friend CircleArc ArcFrom3Pt(const Point<double> & p1, const Point<double> & p2, const Point<double> & p3)
 	{
 		CircleArc result;
-		scalar sx1sy1 = p1.X*p1.X + p1.Y*p1.Y;
-		scalar sx2sy2 = p2.X*p2.X + p2.Y*p2.Y;
-		scalar sx3sy3 = p3.X*p3.X + p3.Y*p3.Y;
-		Matrix3<scalar> m11(
+		double sx1sy1 = p1.X*p1.X + p1.Y*p1.Y;
+		double sx2sy2 = p2.X*p2.X + p2.Y*p2.Y;
+		double sx3sy3 = p3.X*p3.X + p3.Y*p3.Y;
+		Matrix3<double> m11(
 				p1.X, p1.Y, 1,
 				p2.X, p2.Y, 1,
 				p3.X, p3.Y, 1);
-		Matrix3<scalar> m12(
+		Matrix3<double> m12(
 				sx1sy1, p1.Y, 1,
 				sx2sy2, p2.Y, 1,
 				sx3sy3, p3.Y, 1);
-		Matrix3<scalar> m13(
+		Matrix3<double> m13(
 				sx1sy1, p1.X, 1,
 				sx2sy2, p2.X, 1,
 				sx3sy3, p3.X, 1);
-		Matrix3<scalar> m14(
+		Matrix3<double> m14(
 				sx1sy1, p1.X, p1.Y,
 				sx2sy2, p2.X, p2.Y,
 				sx3sy3, p3.X, p3.Y);
-		scalar dm11 = m11.Determinant();
+		double dm11 = m11.Determinant();
 		if (dm11 == 0)
 		{
 			result.Start = p1;
@@ -375,12 +532,12 @@ struct CircleArc
 		}
 		else
 		{
-			scalar dm12 = m12.Determinant();
-			scalar dm13 = m13.Determinant();
-			scalar dm14 = m14.Determinant();
-			scalar cx = +.5f * dm12/dm11;
-			scalar cy = -.5f * dm13/dm11;
-			result.Center = Point<scalar>(cx, cy);
+			double dm12 = m12.Determinant();
+			double dm13 = m13.Determinant();
+			double dm14 = m14.Determinant();
+			double cx = +.5f * dm12/dm11;
+			double cy = -.5f * dm13/dm11;
+			result.Center = Point<double>(cx, cy);
 			result.Radius = std::sqrt(cx*cx + cy*cy + dm14/dm11);
 			result.Ccw = dm11 > 0;
 			result.Start = p1;
@@ -390,18 +547,18 @@ struct CircleArc
 	}
 
 	// tangent must be normalized
-	friend CircleArc ArcFrom2PtAndNormTangent(const Point<scalar> & p1, const Point<scalar> & tangent, const Point<scalar> & p2)
+	friend CircleArc ArcFrom2PtAndNormTangent(const Point<double> & p1, const Point<double> & tangent, const Point<double> & p2)
 	{
 		CircleArc result;
-		Matrix3<scalar> disp(
+		Matrix3<double> disp(
 				1, 0, p1.X,
 				0, 1, p1.Y,
 				0, 0,    1);
-		Matrix3<scalar> rot(
+		Matrix3<double> rot(
 				tangent.X, -tangent.Y, 0,
 				tangent.Y,  tangent.X, 0,
 				0,          0,         1);
-		Point<scalar> p2img = rot.Inverse()*disp.Inverse()*p2;
+		Point<double> p2img = rot.Inverse()*disp.Inverse()*p2;
 		if (p2img.Y == 0)
 		{
 			result.Start = p1;
@@ -410,9 +567,9 @@ struct CircleArc
 		}
 		else
 		{
-			scalar cy = (p2img.X*p2img.X + p2img.Y*p2img.Y)/2/p2img.Y;
+			double cy = (p2img.X*p2img.X + p2img.Y*p2img.Y)/2/p2img.Y;
 			result.Radius = std::abs(cy);
-			Point<scalar> centerimg(0, cy);
+			Point<double> centerimg(0, cy);
 			result.Center = disp*rot*centerimg;
 			result.Ccw = cy > 0;
 			result.Start = p1;
@@ -421,24 +578,17 @@ struct CircleArc
 		return result;
 	}
 
-	friend Point<scalar> ArcMiddleFrom2PtAndBulge(const Point<scalar> & p1, const Point<scalar> & p2, scalar bulge)
+	friend Point<double> ArcMiddleFrom2PtAndBulge(const Point<double> & p1, const Point<double> & p2, double bulge)
 	{
 		return (p2 + p1)/2 + ((p2 - p1)/2).Rotate(-M_PI/2) * bulge;
 	}
 
-	friend CircleArc ArcFrom2PtAndBulge(const Point<scalar> & p1, const Point<scalar> & p2, scalar bulge)
+	friend CircleArc ArcFrom2PtAndBulge(const Point<double> & p1, const Point<double> & p2, double bulge)
 	{
 		return ArcFrom3Pt(p1, ArcMiddleFrom2PtAndBulge(p1, p2, bulge), p2);
 	}
 };
 
-
-template <class scalar>
-inline bool Intersects(const CircleArc<scalar> & arc, const Rect<scalar> & rect)
-{
-	return ArcIntersectsRect(arc.Center.X, arc.Center.Y, arc.Radius, arc.Start.X,
-			arc.Start.Y, arc.End.X, arc.End.Y, arc.Ccw, rect.Pt1.X, rect.Pt1.Y, rect.Pt2.X, rect.Pt2.Y);
-}
 
 template<typename scalar> // float or double
 bool LineIntersectsRect(scalar p1x, scalar p1y, scalar p2x, scalar p2y, scalar x1, scalar y1, scalar x2, scalar y2)
@@ -495,91 +645,83 @@ bool LineIntersectsRect(const Point<scalar> & p1, const Point<scalar> p2,
 }
 
 
-template<typename scalar> // float or double
-inline bool AngInArc(scalar angle, scalar startAngle, scalar endAngle)
-{
-	if (startAngle < endAngle)
-		return startAngle <= angle && angle <= endAngle;
-	else
-		return angle <= endAngle || startAngle <= angle;
-}
-
-
-template<typename scalar> // float or double
-inline bool PtInArc(scalar x, scalar y, scalar startAngle, scalar endAngle)
+inline bool PtInArc(Point<double> pt, NormalAngle startAngle, NormalAngle endAngle)
 {
 	assert(startAngle != endAngle);
-	return AngInArc(atan2(y, x), startAngle, endAngle);
+	return AngInArc(pt.Angle(), startAngle, endAngle);
 }
 
 
-template<typename scalar> // float or double
-inline std::pair<bool, scalar> VertLineIntersectsCircle(scalar x, Point<scalar> c, scalar r)
+inline std::pair<bool, double> VertLineIntersectsCircle(double x, Circle circle)
 {
-	// is strait line intersects circle
-	if (c.X - r <= x && x <= c.X + r)
-		return make_pair(true, sqrt(r*r - (x - c.X)*(x - c.X)));
+	// is straight line intersects circle
+	double cx = circle.Center.X;
+	double r = circle.Radius;
+	if (cx - r <= x && x <= cx + r)
+		return std::make_pair(true, sqrt(r*r - (x - cx)*(x - cx)));
 	else
-		return make_pair(false, static_cast<scalar>(0.0));
+		return std::make_pair(false, 0.0);
 }
 
 
-template<typename scalar> // float or double
-inline std::pair<bool, scalar> HorzLineIntersectsCircle(scalar y, Point<scalar> c, scalar r)
+inline std::pair<bool, double> HorzLineIntersectsCircle(double y, Circle circle)
 {
-	// is strait line intersects circle
-	if (c.Y - r <= y && y <= c.Y + r)
-		return std::make_pair(true, sqrt(r*r - (y - c.Y)*(y - c.Y)));
+	// is straight line intersects circle
+	double cy = circle.Center.Y;
+	double r = circle.Radius;
+	if (cy - r <= y && y <= cy + r)
+		return std::make_pair(true, sqrt(r*r - (y - cy)*(y - cy)));
 	else
-		return std::make_pair(false, static_cast<scalar>(0.0));
+		return std::make_pair(false, 0.0);
 }
 
 
-template<typename scalar> // float or double
-inline bool VertLineIntersectArc(scalar x, scalar y1, scalar y2, scalar cx, scalar cy, scalar r, scalar startAngle, scalar endAngle)
+inline bool VertLineIntersectArc(double x, double y1, double y2, Circle circle, NormalAngle startAngle, NormalAngle endAngle)
 {
 	std::pair<bool, double> res;
-	res = VertLineIntersectsCircle(x, Point<scalar>(cx, cy), r);
+	res = VertLineIntersectsCircle(x, circle);
 	if (!res.first)
 		return false;
+	double cx = circle.Center.X, cy = circle.Center.Y;
 	// is intersection inside line cut
 	if (y1 <= cy + res.second && cy + res.second <= y2)
 	{
-		if (PtInArc(x - cx, res.second, startAngle, endAngle))
+		if (PtInArc(Point<double>(x - cx, res.second), startAngle, endAngle))
 			return true;
 	}
 	// have 2nd root and intersection inside line cut
 	if (res.second != 0 && y1 <= cy - res.second && cy - res.second <= y2)
 	{
-		if (PtInArc(x - cx, -res.second, startAngle, endAngle))
+		if (PtInArc(Point<double>(x - cx, -res.second), startAngle, endAngle))
 			return true;
 	}
 	return false;
 }
 
 
-template<typename scalar> // float or double
-inline bool HorzLineIntersectArc(scalar y, scalar x1, scalar x2, scalar cx, scalar cy, scalar r, scalar startAngle, scalar endAngle)
+inline bool HorzLineIntersectArc(double y, double x1, double x2, Circle circle, NormalAngle startAngle, NormalAngle endAngle)
 {
+	double cx = circle.Center.X, cy = circle.Center.Y;
+	double r = circle.Radius;
 	// is strait line intersects circle
 	if (cy - r <= y && y <= cy + r)
 	{
-		scalar root = sqrt(r*r - (y - cy)*(y - cy));
-		scalar intx = cx + root;
+		double root = sqrt(r*r - (y - cy)*(y - cy));
+		double intx = cx + root;
 		// is intersection inside line cut
 		if (x1 <= intx && intx <= x2)
 		{
-			if (PtInArc(root, y - cy, startAngle, endAngle))
+			if (PtInArc(Point<double>(root, y - cy), startAngle, endAngle))
 				return true;
 		}
 		// have 2nd root
 		if (root != 0)
 		{
 			// is intersection inside line cut
-			scalar intx = cx - root;
+			double intx = cx - root;
 			if (x1 <= intx && intx <= x2)
 			{
-				if (PtInArc(-root, y - cy, startAngle, endAngle))
+				if (PtInArc(Point<double>(-root, y - cy), startAngle, endAngle))
 					return true;
 			}
 		}
@@ -588,64 +730,290 @@ inline bool HorzLineIntersectArc(scalar y, scalar x1, scalar x2, scalar cx, scal
 }
 
 
-template<typename scalar> // float or double
-inline Rect<scalar> ArcsBoundingRect(scalar cx, scalar cy, scalar r, scalar p1x, scalar p1y, scalar p2x, scalar p2y, bool ccw)
+inline bool IsIntersects(CircleArc arc, Rect<double> rect)
 {
-	Rect<scalar> result = Rect<double>(p1x, p1y, p2x, p2y).Normalized();
-	scalar startAngle = atan2(p1y - cy, p1x - cx);
-	scalar endAngle = atan2(p2y - cy, p2x - cx);
-	if (!ccw)
-		swap(startAngle, endAngle);
-	if (AngInArc(0.0, startAngle, endAngle))
-		result.Pt2.X = cx + r;
-	if (AngInArc(M_PI / 2, startAngle, endAngle))
-		result.Pt2.Y = cy + r;
-	if (AngInArc(M_PI, startAngle, endAngle))
-		result.Pt1.X = cx - r;
-	if (AngInArc(-M_PI / 2, startAngle, endAngle))
-		result.Pt1.Y = cy - r;
-	return result;
-}
+	assert(rect.IsNormalized());
 
-
-template<typename scalar> // float or double
-inline bool ArcIntersectsRect(scalar cx, scalar cy, scalar r, scalar p1x, scalar p1y, scalar p2x, scalar p2y, bool ccw, scalar x1, scalar y1, scalar x2, scalar y2)
-{
-	assert(x1 <= x2);
-	assert(y1 <= y2);
-
-	Rect<scalar> brect = ArcsBoundingRect(cx, cy, r, p1x, p1y, p2x, p2y, ccw);
-	if (!IsRectsIntersects(brect, Rect<scalar>(x1, y1, x2, y2)))
+	Rect<double> brect = arc.CalcBoundingRect();
+	if (!IsRectsIntersects(brect, rect))
 		return false;
 
 	// checking is arc fits in rectangle
-	if (IsLeftContainsRight(Rect<scalar>(x1, y1, x2, y2), brect))
+	if (IsLeftContainsRight(rect, brect))
 		return true;
 
 	// determining angles of arc end points
-	scalar angle1 = atan2(p1y - cy, p1x - cx);
-	scalar angle2 = atan2(p2y - cy, p2x - cx);
+	NormalAngle angle1 = (arc.Start - arc.Center).Angle();
+	NormalAngle angle2 = (arc.End - arc.Center).Angle();
 	// ensuring CCW direction from angle1 to angle2
-	if (!ccw)
-	{
-		scalar temp = angle1;
-		angle1 = angle2;
-		angle2 = temp;
-	}
+	if (!arc.Ccw)
+		std::swap(angle1, angle2);
 
 	// checking intersection with left side of rectangle
-	if (VertLineIntersectArc(x1, y1, y2, cx, cy, r, angle1, angle2))
+	if (VertLineIntersectArc(rect.Pt1.X, rect.Pt1.Y, rect.Pt2.Y, arc, angle1, angle2))
 		return true;
 	// checking intersection with right side of rectangle
-	if (VertLineIntersectArc(x2, y1, y2, cx, cy, r, angle1, angle2))
+	if (VertLineIntersectArc(rect.Pt2.X, rect.Pt1.Y, rect.Pt2.Y, arc, angle1, angle2))
 		return true;
 	// checking intersection with top side of rectangle
-	if (HorzLineIntersectArc(y1, x1, x2, cx, cy, r, angle1, angle2))
+	if (HorzLineIntersectArc(rect.Pt1.Y, rect.Pt1.X, rect.Pt2.X, arc, angle1, angle2))
 		return true;
 	// checking intersection with bottom side of rectangle
-	if (HorzLineIntersectArc(y2, x1, x2, cx, cy, r, angle1, angle2))
+	if (HorzLineIntersectArc(rect.Pt2.Y, rect.Pt1.X, rect.Pt2.X, arc, angle1, angle2))
 		return true;
 	return false;
+}
+
+
+struct Straight
+{
+	double A, B, C;
+};
+
+
+struct Line
+{
+	Point<double> Point1;
+	Point<double> Point2;
+
+	Line() {}
+	Line(Point<double> pt1, Point<double> pt2) : Point1(pt1), Point2(pt2) {}
+
+	Rect<double> GetBoundingRect() const
+	{
+		return Rect<double>(Point1, Point2).Normalized();
+	}
+
+	Straight GetStraight() const
+	{
+		double x1 = Point1.X, x2 = Point2.X;
+		double y1 = Point1.Y, y2 = Point2.Y;
+		Straight result = {y2-y1, -(x2-x1), y1*(x2-x1) - x1*(y2-y1)};
+		return result;
+	}
+};
+
+
+inline std::vector<Point<double> > Intersect(const Line & l1,
+		const Line & l2)
+{
+	Point<double> p1 = l1.Point1, p2 = l1.Point2;
+	Point<double> p3 = l2.Point1, p4 = l2.Point2;
+	// enforcing reflexivity of intersection function,
+	// i.e. same result from intersect(a,b) and intersect(b,a)
+	/*Order(p1, p2);
+	Order(p3, p4);
+	if (p1.X > p3.X || p1.X == p3.X && p1.Y > p3.Y)
+	{
+		swap(p1, p3);
+		swap(p2, p4);
+	}
+	else if (p1 == p3 && (p2.X > p4.X || p2.X == p4.X && p2.Y > p4.Y))
+	{
+		swap(p2, p4);
+	}*/
+	// calculating intersection using Cramer matrix method
+	// for solving system of linear equations
+	Matrix2<double> m(p2.Y - p1.Y, p1.X - p2.X,
+			p4.Y - p3.Y, p3.X - p4.X);
+	double detm = m.Determinant();
+	std::vector<Point<double> > res;
+	if (detm == 0)
+		return res;
+	Matrix2<double> mx(p1.X*p2.Y - p2.X*p1.Y, p1.X - p2.X,
+			p3.X*p4.Y - p4.X*p3.Y, p3.X - p4.X);
+	Matrix2<double> my(p2.Y - p1.Y, p1.X*p2.Y - p2.X*p1.Y,
+			p4.Y - p3.Y, p3.X*p4.Y - p4.X*p3.Y);
+	Point<double> pt(mx.Determinant()/detm, my.Determinant()/detm);
+	// checking that intersection is within lines segments
+	bool bres = l1.GetBoundingRect().ContainsWithEpsilon(pt) &&
+		l2.GetBoundingRect().ContainsWithEpsilon(pt);
+	if (bres)
+		res.push_back(pt);
+	return res;
+}
+
+
+struct SquareEquation
+{
+	bool HasRoots;
+	bool TwoRoots;
+	double Root1;
+	double Root2;
+	SquareEquation(double a, double b, double c)
+	{
+		double descr = b*b - 4*a*c;
+		if (descr < 0)
+		{
+			HasRoots = false;
+		}
+		else if (descr == 0)
+		{
+			HasRoots = true;
+			TwoRoots = false;
+			Root1 = -b/2/a;
+		}
+		else
+		{
+			HasRoots = true;
+			TwoRoots = true;
+			Root1 = (-b + sqrt(descr))/2/a;
+			Root2 = (-b - sqrt(descr))/2/a;
+		}
+	}
+};
+
+
+struct CircLineIntersectRes
+{
+	bool HasIntersection;
+	bool TwoPoints;
+	Point<double> Point1;
+	Point<double> Point2;
+};
+
+
+inline std::vector<Point<double> > Intersect(const Line & line, const Circle & circle)
+{
+	Straight str = line.GetStraight();
+	double a = str.A, b = str.B, c = str.C;
+	double cx = circle.Center.X, cy = circle.Center.Y, r = circle.Radius;
+	Point<double> pt1, pt2;
+	bool hasPoints;
+	bool twoPoints;
+	if (a == 0)
+	{
+		double y = line.Point1.Y;
+		std::pair<bool, double> tuple = HorzLineIntersectsCircle(y, circle);
+		if (hasPoints = tuple.first)
+		{
+			pt1 = Point<double>(cx + tuple.second, y);
+			if (twoPoints = tuple.second != 0)
+				pt2 = Point<double>(cx - tuple.second, y);
+		}
+	}
+	else if (b == 0)
+	{
+		double x = line.Point1.X;
+		std::pair<bool, double> tuple = VertLineIntersectsCircle(x, circle);
+		if (hasPoints = tuple.first)
+		{
+			pt1 = Point<double>(x, cy + tuple.second);
+			if (twoPoints = tuple.second != 0)
+				pt2 = Point<double>(x, cy - tuple.second);
+		}
+	}
+	else
+	{
+		SquareEquation eq(a/b*a/b + 1, 2*(a*c/b/b + a*cy/b - cx), (c/b + cy)*(c/b + cy) + cx*cx - r*r);
+		if (hasPoints = eq.HasRoots)
+		{
+			pt1 = Point<double>(eq.Root1, -(c + a*eq.Root1)/b);
+			if (twoPoints = eq.TwoRoots)
+				pt2 = Point<double>(eq.Root2, -(c + a*eq.Root2)/b);
+		}
+	}
+	std::vector<Point<double> > res;
+	if (hasPoints)
+	{
+		Rect<double> brect = line.GetBoundingRect();
+		if (brect.ContainsWithEpsilon(pt1))
+			res.push_back(pt1);
+		if (twoPoints && brect.ContainsWithEpsilon(pt2))
+			res.push_back(pt2);
+	}
+	return res;
+}
+
+inline std::vector<Point<double> > Intersect(const Circle & circle, const Line & line)
+{
+	return Intersect(line, circle);
+}
+
+
+inline std::vector<Point<double> > Intersect(const Line & line, const CircleArc & arc)
+{
+	std::vector<Point<double> > points = Intersect(static_cast<const Circle&>(arc), line);
+	std::vector<Point<double> > res;
+	for (std::vector<Point<double> >::const_iterator i = points.begin();
+		i != points.end(); i++)
+	{
+		if (arc.ContainsAngWithEpsilon((*i - arc.Center).Angle()))
+			res.push_back(*i);
+	}
+	return res;
+}
+
+inline std::vector<Point<double> > Intersect(const CircleArc & arc, const Line & line)
+{
+	return Intersect(line, arc);
+}
+
+
+inline std::vector<Point<double> > Intersect(const Circle & lhs, const Circle & rhs)
+{
+	double r0 = rhs.Radius, r1 = lhs.Radius;
+	Point<double> p0 = rhs.Center;
+	Point<double> p1 = lhs.Center;
+	std::vector<Point<double> > res;
+	if (rhs == lhs)
+		return res;
+	double d = (p1 - p0).Length();
+	// circles outside each other
+	if (d > r0 + r1 + EPSILON)
+		return res;
+	// one circle inside other
+	if (d < std::fabs(r0 - r1) - EPSILON)
+		return res;
+	// one point
+	if (EqualsEpsilon(d, r0 + r1))
+	{
+		res.push_back(p0 + r0*(p1 - p0)/d);
+		return res;
+	}
+	double a = (r0*r0 - r1*r1 + d*d)/2/d;
+	double h = std::sqrt(r0*r0 - a*a);
+	Point<double> p2 = p0 + a*(p1 - p0)/d;
+	res.push_back(Point<double>(p2.X + h*(p1.Y - p0.Y)/d, p2.Y - h*(p1.X - p0.X)/d));
+	res.push_back(Point<double>(p2.X - h*(p1.Y - p0.Y)/d, p2.Y + h*(p1.X - p0.X)/d));
+	return res;
+}
+
+
+inline std::vector<Point<double> > Intersect(const Circle & circle, const CircleArc & arc)
+{
+	std::vector<Point<double> > points = Intersect(circle, static_cast<const Circle&>(arc));
+	std::vector<Point<double> > res;
+	for (std::vector<Point<double> >::const_iterator i = points.begin();
+		i != points.end(); i++)
+	{
+		if (arc.ContainsAngWithEpsilon((*i - arc.Center).Angle()))
+			res.push_back(*i);
+	}
+	return res;
+}
+
+inline std::vector<Point<double> > Intersect(const CircleArc & arc, const Circle & circle)
+{
+	return Intersect(circle, arc);
+}
+
+
+inline std::vector<Point<double> > Intersect(const CircleArc & lhs, const CircleArc & rhs)
+{
+	std::vector<Point<double> > points = Intersect(static_cast<const Circle&>(lhs),
+			static_cast<const Circle&>(rhs));
+	std::vector<Point<double> > res;
+	for (std::vector<Point<double> >::const_iterator i = points.begin();
+		i != points.end(); i++)
+	{
+		if (lhs.ContainsAngWithEpsilon((*i - lhs.Center).Angle()) &&
+				rhs.ContainsAngWithEpsilon((*i - rhs.Center).Angle()))
+		{
+			res.push_back(*i);
+		}
+	}
+	return res;
 }
 
 
