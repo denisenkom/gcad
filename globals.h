@@ -304,6 +304,39 @@ public:
 };
 
 
+template <class T>
+std::vector<Point<double> > Intersect2(const T & lhs, const CadPolyline & polyline1)
+{
+	std::vector<Point<double> > res;
+	CadPolyline2 polyline = polyline1;
+	for (CadPolyline2Iterator i = polyline.Begin(); i != polyline.End(); i++)
+	{
+		std::vector<Point<double> > subres = Intersect2(lhs, **i);
+		res.insert(res.end(), subres.begin(), subres.end());
+	}
+	return res;
+}
+
+template <class T>
+std::vector<Point<double> > Intersect2(const T & lhs, const CadObject & rhs)
+{
+	struct RhsDispatch : IConstCadObjVisitor
+	{
+		RhsDispatch(const T & lhs) : m_lhs(lhs) {}
+		const T & m_lhs;
+		std::vector<Point<double> > m_result;
+		virtual void Visit(const CadLine & rhs) {m_result = Intersect(m_lhs, rhs);}
+		virtual void Visit(const CadCircle & rhs) {m_result = Intersect(m_lhs, rhs);}
+		virtual void Visit(const CadArc & rhs) {m_result = Intersect(m_lhs, rhs);}
+		virtual void Visit(const CadPolyline & rhs) {m_result = Intersect2(m_lhs, rhs);}
+	} dispatch(lhs);
+	rhs.Accept(dispatch);
+	return dispatch.m_result;
+}
+
+std::vector<Point<double> > Intersect2(const CadObject & lhs, const CadObject & rhs);
+
+
 class Document
 {
 public:

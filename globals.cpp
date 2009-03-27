@@ -10,6 +10,7 @@
 #include <commctrl.h>
 #include <windowsx.h>
 #include <loki/functor.h>
+#include <loki/multimethods.h>
 #include <loki/typelistmacros.h>
 #include <algorithm>
 #include <cmath>
@@ -825,6 +826,28 @@ void CadArc::Load(unsigned char const *& ptr, size_t & size)
 	ReadPtr(ptr, End.X, size);
 	ReadPtr(ptr, End.Y, size);
 	ReadPtr(ptr, Ccw, size);
+}
+
+
+struct Intersector
+{
+	template <class T1, class T2>
+	vector<Point<double> > Fire(const T1 & lhs, const T2 & rhs) {return Intersect(lhs, rhs);}
+	template<class T>
+	vector<Point<double> > Fire(const T & lhs, const CadPolyline & polyline) {return Intersect2(lhs, polyline);}
+	template<class T>
+	vector<Point<double> > Fire(const CadPolyline & polyline, const T & rhs) { assert(0); }
+	vector<Point<double> > Fire(const CadPolyline & lhs, const CadPolyline & rhs) { assert(0); }
+	vector<Point<double> > OnError(const CadObject & lhs, const CadObject & rhs) { assert(0); }
+};
+
+vector<Point<double> > Intersect2(const CadObject & lhs, const CadObject & rhs)
+{
+	return Loki::StaticDispatcher<Intersector,
+		const CadObject, LOKI_TYPELIST_4(const CadLine, const CadCircle, const CadArc, const CadPolyline),
+		true,
+		const CadObject, LOKI_TYPELIST_4(const CadLine, const CadCircle, const CadArc, const CadPolyline),
+		vector<Point<double> > >::Go(lhs, rhs, Intersector());
 }
 
 

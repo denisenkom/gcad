@@ -8,7 +8,6 @@
 #include "tools.h"
 #include "console.h"
 #include <loki/functor.h>
-#include <loki/multimethods.h>
 #include <loki/typelistmacros.h>
 #include <algorithm>
 #include <functional>
@@ -1072,83 +1071,6 @@ void TrimTool::SelectedObjectToTrimHandler(CadObject * obj, size_t num)
 	g_console.LogCommand();
 	MakeTrim(obj);
 	BeginSelecting(L"Select object to trim:", Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)>(this, &TrimTool::SelectedObjectToTrimHandler), false);
-}
-
-
-template <class T>
-vector<Point<double> > Intersect(const T & lhs, const CadPolyline & polyline1)
-{
-	vector<Point<double> > res;
-	CadPolyline2 polyline = polyline1;
-	for (CadPolyline2Iterator i = polyline.Begin(); i != polyline.End(); i++)
-	{
-		vector<Point<double> > subres = Intersect2(lhs, **i);
-		res.insert(res.end(), subres.begin(), subres.end());
-	}
-	return res;
-}
-
-
-struct Intersector
-{
-	template <class T1, class T2>
-	vector<Point<double> > Fire(const T1 & lhs, const T2 & rhs)
-	{
-		return Intersect(lhs, rhs);
-	}
-
-	template<class T>
-	vector<Point<double> > Fire(const CadPolyline & polyline, const T & rhs)
-	{
-		assert(0);
-	}
-
-	vector<Point<double> > Fire(const CadPolyline & lhs, const CadPolyline & rhs)
-	{
-		assert(0);
-	}
-
-	vector<Point<double> > OnError(const CadObject & lhs, const CadObject & rhs) { assert(0); }
-};
-
-vector<Point<double> > Intersect2(const CadObject & lhs, const CadObject & rhs)
-{
-	return Loki::StaticDispatcher<Intersector,
-		const CadObject, LOKI_TYPELIST_4(const CadLine, const CadCircle, const CadArc, const CadPolyline),
-		true,
-		const CadObject, LOKI_TYPELIST_4(const CadLine, const CadCircle, const CadArc, const CadPolyline),
-		vector<Point<double> > >::Go(lhs, rhs, Intersector());
-}
-
-
-template <class T>
-vector<Point<double> > Intersect2(const T & lhs, const CadObject & rhs)
-{
-	struct RhsDispatch : IConstCadObjVisitor
-	{
-		RhsDispatch(const T & lhs) : m_lhs(lhs) {}
-		const T & m_lhs;
-		vector<Point<double> > m_result;
-
-		virtual void Visit(const CadLine & rhs)
-		{
-			m_result = Intersect(m_lhs, rhs);
-		}
-		virtual void Visit(const CadCircle & rhs)
-		{
-			m_result = Intersect(m_lhs, rhs);
-		}
-		virtual void Visit(const CadArc & rhs)
-		{
-			m_result = Intersect(m_lhs, rhs);
-		}
-		virtual void Visit(const CadPolyline & rhs)
-		{
-			m_result = Intersect(m_lhs, rhs);
-		}
-	} dispatch(lhs);
-	rhs.Accept(dispatch);
-	return dispatch.m_result;
 }
 
 
