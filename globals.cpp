@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cfloat>
+#include <limits>
+#include <vector>
 
 
 using namespace std;
@@ -169,23 +171,23 @@ void CadLine::Move(Point<double> displacement)
 }
 
 
-CadLine * CadLine::Clone()
+CadLine * CadLine::Clone() const
 {
 	return new CadLine(*this);
 }
 
 
-void CadLine::Assign(CadObject * rhs)
+void CadLine::Assign(const CadObject & rhs)
 {
-	CadLine * line = dynamic_cast<CadLine *>(rhs);
+	const CadLine * line = dynamic_cast<const CadLine *>(&rhs);
 	assert(line != 0);
-	Assign(line);
+	Assign(*line);
 }
 
 
-void CadLine::Assign(CadLine * line)
+void CadLine::Assign(const CadLine & line)
 {
-	*this = *line;
+	*this = line;
 }
 
 
@@ -210,7 +212,7 @@ void CadLine::Load(unsigned char const *& ptr, size_t & size)
 }
 
 
-static void DrawArcInternal(HDC hdc, const CircleArc<double> & arc, void (*drawer)(HDC, int, int, int, int, int, int, int, int))
+static void DrawArcInternal(HDC hdc, const CircleArc & arc, void (*drawer)(HDC, int, int, int, int, int, int, int, int))
 {
 	if (arc.Radius != 0 & arc.Radius < 10E+10)
 	{
@@ -242,12 +244,12 @@ static void ArcToDrawer(HDC hdc, int rcl, int rct, int rcr, int rcb, int sx, int
 }
 
 
-inline void DrawArc(HDC hdc, const CircleArc<double> & arc)
+inline void DrawArc(HDC hdc, const CircleArc & arc)
 {
 	DrawArcInternal(hdc, arc, &ArcDrawer);
 }
 
-inline void DrawArcTo(HDC hdc, const CircleArc<double> & arc)
+inline void DrawArcTo(HDC hdc, const CircleArc & arc)
 {
 	DrawArcInternal(hdc, arc, &ArcToDrawer);
 }
@@ -275,7 +277,7 @@ void CadPolyline::Draw(HDC hdc, bool selected) const
 		assert(0);
 	if (SetBkColor(hdc, RGB(0, 0, 0)) == CLR_INVALID)
 		assert(0);
-	list<Node>::const_iterator i = Nodes.begin();
+	vector<Node>::const_iterator i = Nodes.begin();
 	Node prev;
 	assert(i != Nodes.end());
 	Point<int> scnPt = WorldToScreen(i->Point);
@@ -297,8 +299,8 @@ static bool PolylineSegIntersectsRect(const CadPolyline::Node & from, const CadP
 	}
 	else
 	{
-		CircleArc<double> arc = ArcFrom2PtAndBulge(from.Point, to.Point, from.Bulge);
-		return Intersects(arc, rect);
+		CircleArc arc = ArcFrom2PtAndBulge(from.Point, to.Point, from.Bulge);
+		return IsIntersects(arc, rect);
 	}
 }
 
@@ -307,7 +309,7 @@ bool CadPolyline::IntersectsRect(double x1, double y1, double x2, double y2) con
 {
 	Node prev;
 	Rect<double> rect(x1, y1, x2, y2);
-	for (list<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); prev = *i, i++)
+	for (vector<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); prev = *i, i++)
 	{
 		if (i == Nodes.begin())
 			continue;
@@ -336,7 +338,7 @@ Rect<double> CadPolyline::GetBoundingRect() const
 	Rect<double> result;
 	bool first = true;
 	Node prev;
-	for (list<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); prev = *i, i++)
+	for (vector<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); prev = *i, i++)
 	{
 		if (i == Nodes.begin())
 			continue;
@@ -364,7 +366,7 @@ std::vector<Point<double> > CadPolyline::GetManipulators() const
 {
 	vector<Point<double> > result;
 	Node prev;
-	for (list<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); prev = *i, i++)
+	for (vector<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); prev = *i, i++)
 	{
 		if (i != Nodes.begin())
 		{
@@ -388,8 +390,8 @@ std::vector<Point<double> > CadPolyline::GetManipulators() const
 void CadPolyline::UpdateManip(const Point<double> & pt, int id)
 {
 	int counter = 0;
-	list<Node>::iterator prev;
-	for (list<Node>::iterator i = Nodes.begin(); i != Nodes.end(); i++)
+	vector<Node>::iterator prev;
+	for (vector<Node>::iterator i = Nodes.begin(); i != Nodes.end(); i++)
 	{
 		if (i != Nodes.begin())
 		{
@@ -397,7 +399,7 @@ void CadPolyline::UpdateManip(const Point<double> & pt, int id)
 			{
 				if (counter == id)
 				{
-					CircleArc<double> arc = ArcFrom3Pt(prev->Point, pt,
+					CircleArc arc = ArcFrom3Pt(prev->Point, pt,
 						i->Point);
 					prev->Bulge = arc.CalcBulge();
 					return;
@@ -416,7 +418,7 @@ void CadPolyline::UpdateManip(const Point<double> & pt, int id)
 	if (Closed)
 	{
 		assert(counter == id);
-		CircleArc<double> arc = ArcFrom3Pt(Nodes.back().Point, pt,
+		CircleArc arc = ArcFrom3Pt(Nodes.back().Point, pt,
 				Nodes.front().Point);
 		prev->Bulge = arc.CalcBulge();
 		return;
@@ -437,7 +439,7 @@ static void AddPolylineSegPoints(const CadPolyline::Node & from,
 	else
 	{
 		Point<double> middle = ArcMiddleFrom2PtAndBulge(from.Point, to.Point, from.Bulge);
-		CircleArc<double> arc = ArcFrom3Pt(from.Point, middle, to.Point);
+		CircleArc arc = ArcFrom3Pt(from.Point, middle, to.Point);
 		result.push_back(make_pair(middle, PointTypeMiddle));
 		result.push_back(make_pair(arc.Center, PointTypeCenter));
 	}
@@ -449,7 +451,7 @@ std::vector<std::pair<Point<double>, PointType> > CadPolyline::GetPoints() const
 {
 	vector<pair<Point<double>, PointType> > result;
 	Node prev;
-	for (list<Node>::const_iterator i = Nodes.begin(); i != Nodes.end();
+	for (vector<Node>::const_iterator i = Nodes.begin(); i != Nodes.end();
 		prev = *i, i++)
 	{
 		if (i != Nodes.begin())
@@ -464,7 +466,7 @@ std::vector<std::pair<Point<double>, PointType> > CadPolyline::GetPoints() const
 
 void CadPolyline::Move(Point<double> displacement)
 {
-	for (list<Node>::iterator i = Nodes.begin(); i != Nodes.end(); i++)
+	for (vector<Node>::iterator i = Nodes.begin(); i != Nodes.end(); i++)
 		i->Point += displacement;
 }
 
@@ -475,7 +477,7 @@ size_t CadPolyline::Serialize(unsigned char * ptr) const
 	result += WritePtr(ptr, ID);
 	result += WritePtr(ptr, static_cast<int>(Closed));
 	result += WritePtr(ptr, Nodes.size());
-	for (list<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); i++)
+	for (vector<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); i++)
 		result += WritePtr(ptr, *i);
 	return result;
 }
@@ -496,6 +498,69 @@ void CadPolyline::Load(unsigned char const *& ptr, size_t & size)
 	}
 }
 
+
+CadPolyline2::CadPolyline2(const std::vector<CadPolyline::Node> & nodes, bool closed)
+{
+	InitFromNodes(nodes, closed);
+}
+
+CadPolyline2::CadPolyline2(const CadPolyline & rhs)
+{
+	InitFromNodes(rhs.Nodes, rhs.Closed);
+}
+
+CadPolyline2::~CadPolyline2()
+{
+	for_each(m_elements.begin(), m_elements.end(), ptr_fun(operator delete));
+}
+
+void CadPolyline2::InitFromNodes(const std::vector<CadPolyline::Node> & nodes, bool closed)
+{
+	m_closed = closed;
+	CadPolyline::Node prev;
+	for (vector<CadPolyline::Node>::const_iterator i = nodes.begin(); i != nodes.end(); prev = *i, i++)
+	{
+		if (i == nodes.begin())
+			continue;
+		AddSeg(prev, *i);
+	}
+	if (closed)
+		AddSeg(nodes.back(), nodes.front());
+}
+
+void CadPolyline2::AddSeg(CadPolyline::Node node1, CadPolyline::Node node2)
+{
+	if (node1.Bulge == 0)
+	{
+		m_elements.push_back(new CadLine(node1.Point, node2.Point));
+	}
+	else
+	{
+		m_elements.push_back(new CadArc(ArcFrom2PtAndBulge(node1.Point,
+				node2.Point, node1.Bulge)));
+	}
+}
+
+CadPolyline CadPolyline2::ToCadPolyline() const
+{
+	CadPolyline result;
+	result.Closed = m_closed;
+	for (vector<IPolylineSeg*>::const_iterator i = m_elements.begin(); i != m_elements.end(); i++)
+	{
+		CadPolyline::Node node;
+		node.Point = (*i)->GetStart();
+		node.Bulge = (*i)->GetBulge();
+		result.Nodes.push_back(node);
+	}
+	if (!m_closed)
+	{
+		CadPolyline::Node node;
+		node.Point = m_elements.back()->GetEnd();
+		node.Bulge = 0;
+		result.Nodes.push_back(node);
+	}
+	return result;
+}
 
 void CadCircle::Draw(HDC hdc, bool selected) const
 {
@@ -519,7 +584,7 @@ bool CadCircle::IntersectsRect(double x1, double y1, double x2, double y2) const
 	if (IsLeftContainsRight(Rect<double>(x1, y1, x2, y2), brect))
 		return true;
 	pair<bool, double> res;
-	res = VertLineIntersectsCircle(x1, Center, Radius);
+	res = VertLineIntersectsCircle(x1, *this);
 	if (res.first)
 	{
 		if (y1 <= Center.Y + res.second && Center.Y + res.second <= y2)
@@ -527,7 +592,7 @@ bool CadCircle::IntersectsRect(double x1, double y1, double x2, double y2) const
 		else if (res.second != 0 && y1 <= Center.Y - res.second && Center.Y - res.second <= y2)
 			return true;
 	}
-	res = VertLineIntersectsCircle(x2, Center, Radius);
+	res = VertLineIntersectsCircle(x2, *this);
 	if (res.first)
 	{
 		if (y1 <= Center.Y + res.second && Center.Y + res.second <= y2)
@@ -535,7 +600,7 @@ bool CadCircle::IntersectsRect(double x1, double y1, double x2, double y2) const
 		else if (res.second != 0 && y1 <= Center.Y - res.second && Center.Y - res.second <= y2)
 			return true;
 	}
-	res = HorzLineIntersectsCircle(y1, Center, Radius);
+	res = HorzLineIntersectsCircle(y1, *this);
 	if (res.first)
 	{
 		if (x1 <= Center.X + res.second && Center.X + res.second <= x2)
@@ -543,7 +608,7 @@ bool CadCircle::IntersectsRect(double x1, double y1, double x2, double y2) const
 		else if (res.second != 0 && x1 <= Center.X - res.second && Center.X - res.second <= x2)
 			return true;
 	}
-	res = HorzLineIntersectsCircle(y2, Center, Radius);
+	res = HorzLineIntersectsCircle(y2, *this);
 	if (res.first)
 	{
 		if (x1 <= Center.X + res.second && Center.X + res.second <= x2)
@@ -608,15 +673,15 @@ void CadCircle::Move(Point<double> displacement)
 }
 
 
-CadCircle * CadCircle::Clone()
+CadCircle * CadCircle::Clone() const
 {
 	return new CadCircle(*this);
 }
 
 
-void CadCircle::Assign(CadObject * rhs)
+void CadCircle::Assign(const CadObject & rhs)
 {
-	CadCircle * rhsCircle = dynamic_cast<CadCircle *>(rhs);
+	const CadCircle * rhsCircle = dynamic_cast<const CadCircle *>(&rhs);
 	assert(rhsCircle != 0);
 	*this = *rhsCircle;
 }
@@ -654,7 +719,7 @@ void CadArc::Draw(HDC hdc, bool selected) const
 
 bool CadArc::IntersectsRect(double x1, double y1, double x2, double y2) const
 {
-	return ArcIntersectsRect(Center.X, Center.Y, Radius, Start.X, Start.Y, End.X, End.Y, Ccw, x1, y1, x2, y2);
+	return IsIntersects(*this, Rect<double>(x1, y1, x2, y2));
 }
 
 
@@ -685,7 +750,7 @@ void CadArc::UpdateManip(const Point<double> & pt, int id)
 	case 2: End = pt; break;
 	default: assert(0); break;
 	}
-	CircleArc<double> arc = ArcFrom3Pt(Start, middle, End);
+	CircleArc arc = ArcFrom3Pt(Start, middle, End);
 	Center = arc.Center;
 	Radius = arc.Radius;
 }
@@ -714,23 +779,23 @@ void CadArc::Move(Point<double> displacement)
 }
 
 
-CadArc * CadArc::Clone()
+CadArc * CadArc::Clone() const
 {
 	return new CadArc(*this);
 }
 
 
-void CadArc::Assign(CadObject * rhs)
+void CadArc::Assign(const CadObject & rhs)
 {
-	CadArc * arc = dynamic_cast<CadArc *>(rhs);
+	const CadArc * arc = dynamic_cast<const CadArc *>(&rhs);
 	assert(arc != 0);
-	Assign(arc);
+	Assign(*arc);
 }
 
 
-void CadArc::Assign(CadArc * arc)
+void CadArc::Assign(const CadArc & arc)
 {
-	*this = *arc;
+	*this = arc;
 }
 
 
@@ -862,8 +927,11 @@ bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 	switch (msg)
 	{
 	case WM_LBUTTONDOWN:
-		m_lassoPt2 = m_lassoPt1 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
-		m_lassoOn = true;
+		if (m_multiselect)
+		{
+			m_lassoPt2 = m_lassoPt1 = ScreenToWorld(g_cursorScn.X, g_cursorScn.Y);
+			m_lassoOn = true;
+		}
 		return true;
 	case WM_MOUSEMOVE:
 		if (m_lassoOn)
@@ -914,7 +982,7 @@ bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 			m_lassoDrawn = false;
 			InvalidateRect(hwnd, 0, true);
 		}
-		if (GetKeyState(VK_SHIFT) & 0x8000)
+		if (m_multiselect && (GetKeyState(VK_SHIFT) & 0x8000))
 		{
 			// removing selection
 			for (list<CadObject *>::iterator i = g_selected.end();
@@ -943,7 +1011,7 @@ bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 			for (list<CadObject *>::reverse_iterator i = g_doc.Objects.rbegin();
 				i != g_doc.Objects.rend(); i++)
 			{
-				if (IsSelected(*i))
+				if (m_multiselect && IsSelected(*i))
 					continue;
 				bool good;
 				if (intersect)
@@ -952,6 +1020,13 @@ bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 					good = IsLeftContainsRight(testRect, (*i)->GetBoundingRect());
 				if (good)
 				{
+					if (!m_multiselect)
+					{
+						g_curTool = m_prevTool;
+						if (DoneCallback)
+							DoneCallback(*i, 1);
+						return true;
+					}
 					g_selected.push_back(*i);
 					if (SelectHandler != 0)
 						SelectHandler(*i, true);
@@ -967,17 +1042,14 @@ bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 		switch (wparam)
 		{
 		case VK_RETURN:
-			if (NextTool == 0)
+			if (!m_multiselect)
 				return false;
-			g_console.LogCommand();
-			if (g_selected.size() == 0)
+			g_curTool = m_prevTool;
 			{
-				ExitTool();
-				return true;
+				vector<CadObject*> sel(g_selected.begin(), g_selected.end());
+				if (DoneCallback)
+					DoneCallback(sel.front(), sel.size());
 			}
-			g_curTool = NextTool;
-			NextTool->Start();
-			InvalidateRect(hwnd, 0, true);
 			return true;
 		default:
 			return false;
@@ -1127,6 +1199,8 @@ void DefaultTool::Start()
 	g_customCursorType = CustomCursorTypeSelect;
 	Functor<void, LOKI_TYPELIST_2(CadObject*,bool)> handler(this, &DefaultTool::SelectHandler);
 	g_selector.SelectHandler = handler;
+	g_selector.DoneCallback = Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)>();
+	g_selector.m_multiselect = true;
 	g_canSnap = false;
 	g_console.SetPrompt(L"command:");
 }
@@ -1192,8 +1266,15 @@ void DefaultTool::AddManipulators(CadObject * obj)
 {
 	vector<Point<double> > manips = obj->GetManipulators();
 	size_t ulManipsNum = manips.size();
-	assert(ulManipsNum <= INT_MAX);
+	assert(ulManipsNum <= static_cast<size_t>(numeric_limits<int>::max()));
 	int manipsNum = static_cast<int>(ulManipsNum);
+	// rounding manipulators to epsilon
+	for (int i = 0; i < manipsNum; i++)
+	{
+		manips[i].X = RoundEpsilon(manips[i].X);
+		manips[i].Y = RoundEpsilon(manips[i].Y);
+	}
+	// joining manipulators
 	for (int i = 0; i < manipsNum; i++)
 	{
 		list<Manipulator>::iterator pmanip = m_manipulators.begin();
@@ -1306,7 +1387,7 @@ void Zoom(float prevMag, float deltaMag, int hscrollPos, int vscrollPos, int x, 
 }
 
 
-REGISTER_TOOL(L"zoom", ZoomTool, false);
+REGISTER_TOOL(L"zoom", ZoomTool);
 
 
 bool ZoomTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
@@ -1347,7 +1428,7 @@ void ZoomTool::Start()
 }
 
 
-REGISTER_TOOL(L"pan", PanTool, false);
+REGISTER_TOOL(L"pan", PanTool);
 
 
 bool PanTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
@@ -1406,7 +1487,8 @@ void PanTool::Start()
 }
 
 
-REGISTER_TOOL(L"copyclip", CopyTool, true);
+typedef SelectWrapperTool<CopyTool> WrappedCopyTool;
+REGISTER_TOOL(L"copyclip", WrappedCopyTool);
 
 
 void CopyTool::Start()
@@ -1452,7 +1534,8 @@ bool CopyTool::InternalStart()
 }
 
 
-REGISTER_TOOL(L"cutclip", CutTool, true);
+typedef SelectWrapperTool<CutTool> WrappedCutTool;
+REGISTER_TOOL(L"cutclip", WrappedCutTool);
 
 
 void CutTool::Start()
@@ -1464,7 +1547,7 @@ void CutTool::Start()
 }
 
 
-REGISTER_TOOL(L"pasteclip", PasteTool, false);
+REGISTER_TOOL(L"pasteclip", PasteTool);
 
 
 bool PasteTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
@@ -1495,7 +1578,8 @@ void PasteTool::Start()
 		size_t size = GlobalSize(hglob);
 		assert(size != 0);
 		unsigned char const * ptr = reinterpret_cast<unsigned char *>(GlobalLock(hglob));
-		m_basePoint = Point<double>(DBL_MAX, DBL_MAX);
+		m_basePoint = Point<double>(numeric_limits<double>::max(),
+				numeric_limits<double>::max());
 		while (size != 0)
 		{
 			int id;
@@ -1586,7 +1670,7 @@ void PasteTool::FeedInsertionPoint(const Point<double> & pt)
 }
 
 
-REGISTER_TOOL(L"u", UndoTool, false);
+REGISTER_TOOL(L"u", UndoTool);
 
 
 void UndoTool::Start()
@@ -1596,7 +1680,7 @@ void UndoTool::Start()
 }
 
 
-REGISTER_TOOL(L"mredo", RedoTool, false);
+REGISTER_TOOL(L"mredo", RedoTool);
 
 
 void RedoTool::Start()
@@ -1606,7 +1690,8 @@ void RedoTool::Start()
 }
 
 
-REGISTER_TOOL(L"erase", EraseTool, true);
+typedef SelectWrapperTool<EraseTool> WrappedEraseTool;
+REGISTER_TOOL(L"erase", WrappedEraseTool);
 
 
 void EraseTool::Start()
@@ -1621,8 +1706,8 @@ Point<int> WorldToScreen(float x, float y)
 	Point<int> result;
 	float scnx = (x - g_extentMin.X) * g_magification + 0.5f;
 	float scny = (y - g_extentMax.Y) * -g_magification + 0.5f;
-	assert(INT_MIN <= scnx - g_hscrollPos && scnx - g_hscrollPos <= INT_MAX);
-	assert(INT_MIN <= scny - g_vscrollPos && scny - g_vscrollPos <= INT_MAX);
+	assert(numeric_limits<int>::min() <= scnx - g_hscrollPos && scnx - g_hscrollPos <= numeric_limits<int>::max());
+	assert(numeric_limits<int>::min() <= scny - g_vscrollPos && scny - g_vscrollPos <= numeric_limits<int>::max());
 	result.X = static_cast<int>(scnx) - g_hscrollPos;
 	result.Y = static_cast<int>(scny) - g_vscrollPos;
 	return result;
@@ -1705,7 +1790,7 @@ void AddObjectUndoItem::Undo()
 void AssignObjectUndoItem::Do()
 {
 	auto_ptr<CadObject> copy(m_toObject->Clone());
-	m_toObject->Assign(m_fromObject.get());
+	m_toObject->Assign(*m_fromObject.get());
 	m_fromObject = copy;
 }
 
@@ -1812,10 +1897,24 @@ void DeleteSelectedObjects()
 }
 
 
-void ToolManager::RegisterTool(const wstring & id, Tool * tool, bool needSelection)
+void ToolManager::RegisterTool(const wstring & id, Tool * tool)
 {
-	ToolInfo toolInfo = {tool, needSelection};
-	m_toolsMap[ToLower(id)] = toolInfo;
+	m_toolsMap[ToLower(id)] = tool;
+}
+
+
+void BeginSelecting(const wchar_t * prompt, const Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)> & doneCallback, bool multiselect)
+{
+	g_selector.m_multiselect = multiselect;
+	g_selector.DoneCallback = doneCallback;
+	g_selector.m_prevTool = g_curTool;
+	g_curTool = &g_selector;
+	g_cursorType = CursorTypeManual;
+	g_cursorHandle = 0;
+	g_customCursorType = CustomCursorTypeBox;
+	g_selector.SelectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
+	g_canSnap = false;
+	g_console.SetPrompt(prompt);
 }
 
 
@@ -1833,32 +1932,10 @@ void ToolManager::DispatchTool(const wstring & id)
 		g_console.Log(L"unknown command: '" + idreal + L"'");
 		return;
 	}
-	if (pos->second.m_needSelection)
-	{
-		if (g_selected.size() == 0)
-		{
-			g_selector.NextTool = pos->second.m_tool;
-			g_curTool = &g_selector;
-			g_cursorType = CursorTypeManual;
-			g_cursorHandle = 0;
-			g_customCursorType = CustomCursorTypeBox;
-			g_selector.SelectHandler = Functor<void, LOKI_TYPELIST_2(CadObject*,bool)>();
-			g_canSnap = false;
-			g_console.SetPrompt(L"Select objects:");
-		}
-		else
-		{
-			g_console.Log(L"Found " + IntToWstr(g_selected.size()) + L" objects");
-			g_curTool = pos->second.m_tool;
-			g_curTool->Start();
-		}
-	}
-	else
-	{
+	if (dynamic_cast<SelectBaseTool*>(pos->second) == 0)
 		g_selected.clear();
-		g_curTool = pos->second.m_tool;
-		g_curTool->Start();
-	}
+	g_curTool = pos->second;
+	g_curTool->Start();
 	InvalidateRect(g_hclientWindow, 0, true);
 }
 

@@ -27,7 +27,7 @@
 #define GET_KEYSTATE_WPARAM(x) LOWORD(x)
 #endif
 
-#define REGISTER_TOOL(id, toolClass, needSelection) \
+#define REGISTER_TOOL(id, toolClass) \
 	namespace Private \
 	{ \
 		struct toolClass ## Registrar \
@@ -35,7 +35,7 @@
 			toolClass ## Registrar() \
 			{ \
 				static toolClass instance; \
-				g_toolManager.RegisterTool(id, &instance, needSelection); \
+				g_toolManager.RegisterTool(id, &instance); \
 			} \
 		} toolClass ## registrar; \
 	}
@@ -73,6 +73,32 @@ enum PointType
 };
 
 
+class CadLine;
+class CadCircle;
+class CadArc;
+class CadPolyline;
+
+
+struct IConstCadObjVisitor
+{
+	virtual ~IConstCadObjVisitor() {}
+	virtual void Visit(const CadLine&) = 0;
+	virtual void Visit(const CadCircle&) = 0;
+	virtual void Visit(const CadArc&) = 0;
+	virtual void Visit(const CadPolyline&) = 0;
+};
+
+
+struct ICadObjVisitor
+{
+	virtual ~ICadObjVisitor() {}
+	virtual void Visit(CadLine&) = 0;
+	virtual void Visit(CadCircle&) = 0;
+	virtual void Visit(CadArc&) = 0;
+	virtual void Visit(CadPolyline&) = 0;
+};
+
+
 class CadObject
 {
 public:
@@ -85,10 +111,12 @@ public:
 	virtual void UpdateManip(const Point<double> & pt, int id) = 0;
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const = 0;
 	virtual void Move(Point<double> displacement) = 0;
-	virtual CadObject * Clone() = 0;
-	virtual void Assign(CadObject * rhs) = 0;
+	virtual CadObject * Clone() const = 0;
+	virtual void Assign(const CadObject & rhs) = 0;
 	virtual size_t Serialize(unsigned char * ptr) const = 0;
 	virtual void Load(unsigned char const *& ptr, size_t & size) = 0;
+	virtual void Accept(ICadObjVisitor&) = 0;
+	virtual void Accept(IConstCadObjVisitor&) const = 0;
 protected:
 	CadObject() {}
 	CadObject(const CadObject & orig) {}
@@ -96,25 +124,50 @@ protected:
 };
 
 
-class CadLine : public CadObject
+struct IPolylineSeg : public virtual CadObject
+{
+	virtual Point<double> GetStart() const = 0;
+	virtual void SetStart(Point<double> pt) = 0;
+	virtual Point<double> GetEnd() const = 0;
+	virtual void SetEnd(Point<double> pt) = 0;
+	virtual double GetBulge() const = 0;
+	virtual IPolylineSeg * Clone() const = 0;
+	// those two functions returns 0 if in result of cutting object will become point
+	virtual IPolylineSeg * CutBegin(Point<double> pt) const = 0;
+	virtual IPolylineSeg * CutEnd(Point<double> pt) const = 0;
+	virtual double PointDist(Point<double> pt) const = 0;
+};
+
+
+class CadLine : public virtual CadObject, public Line, public IPolylineSeg
 {
 public:
 	static const int ID = 1;
-	Point<double> Point1;
-	Point<double> Point2;
 
+	CadLine() {}
+	CadLine(Point<double> p1, Point<double> p2) : Line(p1, p2) {}
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
-	virtual Rect<double> GetBoundingRect() const { return Rect<double>(Point1, Point2).Normalized(); }
+	virtual Rect<double> GetBoundingRect() const { return Line::GetBoundingRect(); }
 	virtual std::vector<Point<double> > GetManipulators() const;
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual void Move(Point<double> displacement);
-	virtual CadLine * Clone();
-	virtual void Assign(CadObject * rhs);
-	void Assign(CadLine * rhs);
+	virtual CadLine * Clone() const;
+	virtual void Assign(const CadObject & rhs);
+	void Assign(const CadLine & rhs);
 	virtual size_t Serialize(unsigned char * ptr) const;
 	virtual void Load(unsigned char const *& ptr, size_t & size);
+	virtual void Accept(ICadObjVisitor & vis) { vis.Visit(*this); }
+	virtual void Accept(IConstCadObjVisitor & vis) const { vis.Visit(*this); };
+	virtual Point<double> GetStart() const { return Point1; }
+	virtual void SetStart(Point<double> pt) { Point1 = pt; }
+	virtual Point<double> GetEnd() const { return Point2; }
+	virtual void SetEnd(Point<double> pt) { Point2 = pt; }
+	virtual double GetBulge() const { return 0; }
+	virtual CadLine * CutBegin(Point<double> pt) const { return EqualsEpsilon(pt, Point2) ? 0 : new CadLine(pt, Point2); }
+	virtual CadLine * CutEnd(Point<double> pt) const { return EqualsEpsilon(Point1, pt) ? 0 : new CadLine(Point1, pt); }
+	virtual double PointDist(Point<double> pt) const { return DotProduct(Point2 - Point1, pt); }
 };
 
 
@@ -127,7 +180,7 @@ public:
 		Point<double> Point;
 		double Bulge;
 	};
-	std::list<Node> Nodes;
+	std::vector<Node> Nodes;
 	bool Closed;
 	CadPolyline() : Closed(false) {}
 	virtual void Draw(HDC hdc, bool selected) const;
@@ -137,25 +190,69 @@ public:
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual void Move(Point<double> displacement);
-	virtual CadPolyline * Clone() { return new CadPolyline(*this); }
-	void Assign(CadPolyline * rhs) { *this = *rhs; }
+	virtual CadPolyline * Clone() const { return new CadPolyline(*this); }
+	void Assign(const CadPolyline & rhs) { *this = rhs; }
 	virtual size_t Serialize(unsigned char * ptr) const;
 	virtual void Load(unsigned char const *& ptr, size_t & size);
+	virtual void Accept(ICadObjVisitor & vis) { vis.Visit(*this); }
+	virtual void Accept(IConstCadObjVisitor & vis) const { vis.Visit(*this); };
 protected:
-	virtual void Assign(CadObject * rhs)
+	virtual void Assign(const CadObject & rhs)
 	{
-		assert(typeid(*rhs) == typeid(CadPolyline));
-		Assign(static_cast<CadPolyline*>(rhs));
+		assert(typeid(rhs) == typeid(CadPolyline));
+		Assign(static_cast<const CadPolyline&>(rhs));
 	}
 };
 
 
-class CadCircle : public CadObject
+class CadPolyline2Iterator
+{
+public:
+	const IPolylineSeg * operator*() { return *m_base; }
+	CadPolyline2Iterator operator++() { return ++m_base; }
+	void operator++(int) { m_base++; }
+	friend CadPolyline2Iterator operator+(CadPolyline2Iterator lhs, int rhs) { return lhs.m_base + rhs; }
+	friend bool operator==(CadPolyline2Iterator lhs, CadPolyline2Iterator rhs) { return lhs.m_base == rhs.m_base; }
+	friend bool operator<(CadPolyline2Iterator lhs, CadPolyline2Iterator rhs) { return lhs.m_base < rhs.m_base; }
+	friend class CadPolyline2;
+private:
+	CadPolyline2Iterator(std::vector<IPolylineSeg*>::const_iterator base) : m_base(base) {}
+	std::vector<IPolylineSeg*>::const_iterator m_base;
+};
+
+
+using namespace std::rel_ops;
+
+
+class CadPolyline2
+{
+	friend class CadPolyline2Iterator;
+public:
+	CadPolyline2(const std::vector<CadPolyline::Node> & nodes, bool closed);
+	CadPolyline2(const CadPolyline & rhs);
+	CadPolyline2(std::vector<IPolylineSeg*> & elements, bool closed);
+	~CadPolyline2();
+	typedef CadPolyline2Iterator Iterator;
+	Iterator Begin() const { return Iterator(m_elements.begin()); }
+	Iterator End() const { return Iterator(m_elements.end()); }
+	const IPolylineSeg * Front() const { return m_elements.front(); }
+	const IPolylineSeg * Back() const { return m_elements.back(); }
+	bool Closed() const { return m_closed; }
+	CadPolyline ToCadPolyline() const;
+private:
+	std::vector<IPolylineSeg*> m_elements;
+	bool m_closed;
+	void InitFromNodes(const std::vector<CadPolyline::Node> & nodes, bool closed);
+	void AddSeg(CadPolyline::Node node1, CadPolyline::Node node2);
+	CadPolyline2() {}
+	friend class TrimVisitor;
+};
+
+
+class CadCircle : public CadObject, public Circle
 {
 public:
 	static const int ID = 2;
-	Point<double> Center;
-	double Radius;
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
 	virtual Rect<double> GetBoundingRect() const;
@@ -163,18 +260,24 @@ public:
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual void Move(Point<double> displacement);
-	virtual CadCircle * Clone();
-	virtual void Assign(CadObject * rhs);
+	virtual CadCircle * Clone() const;
+	virtual void Assign(const CadObject & rhs);
 	virtual size_t Serialize(unsigned char * ptr) const;
 	virtual void Load(unsigned char const *& ptr, size_t & size);
+	virtual void Accept(ICadObjVisitor & vis) { vis.Visit(*this); }
+	virtual void Accept(IConstCadObjVisitor & vis) const { vis.Visit(*this); };
 };
 
 
-class CadArc : public CadObject, public CircleArc<double>
+class CadArc : public virtual CadObject, public CircleArc, public IPolylineSeg
 {
 public:
 	static const int ID = 3;
 
+	CadArc() {}
+	CadArc(const CircleArc & rhs) : CircleArc(rhs) {}
+	CadArc(const Circle & circle, Point<double> start, Point<double> end, bool ccw) :
+		CircleArc(circle, start, end, ccw) {}
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
 	virtual Rect<double> GetBoundingRect() const;
@@ -182,12 +285,22 @@ public:
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual void Move(Point<double> displacement);
-	virtual CadArc * Clone();
-	virtual void Assign(CadObject * rhs);
-	void Assign(CadArc * rhs);
+	virtual CadArc * Clone() const;
+	virtual void Assign(const CadObject & rhs);
+	void Assign(const CadArc & rhs);
 	virtual size_t Serialize(unsigned char * ptr) const;
 	virtual void Load(unsigned char const *& ptr, size_t & size);
-	CadArc & operator=(const CircleArc<double> & rhs) { CircleArc<double> & ca = *this; ca = rhs; return *this; }
+	CadArc & operator=(const CircleArc & rhs) { CircleArc & ca = *this; ca = rhs; return *this; }
+	virtual void Accept(ICadObjVisitor & vis) { vis.Visit(*this); }
+	virtual void Accept(IConstCadObjVisitor & vis) const { vis.Visit(*this); };
+	virtual Point<double> GetStart() const { return Start; }
+	virtual void SetStart(Point<double> pt) { Start = pt; }
+	virtual Point<double> GetEnd() const { return End; }
+	virtual void SetEnd(Point<double> pt) { End = pt; }
+	virtual double GetBulge() const { return CalcBulge(); }
+	virtual CadArc * CutBegin(Point<double> pt) const { return EqualsEpsilon(pt, End) ? 0 : new CadArc(*this, pt, End, Ccw); }
+	virtual CadArc * CutEnd(Point<double> pt) const { return EqualsEpsilon(Start, pt) ? 0 : new CadArc(*this, Start, pt, Ccw); }
+	virtual double PointDist(Point<double> pt) const { return (Ccw ? 1 : -1) * ((pt - Center).Angle() - ((Ccw ? Start : End) - Center).Angle()).To2PiAng(); }
 };
 
 
@@ -235,11 +348,15 @@ public:
 	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
 	virtual void Cancel();
 	Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, bool)> SelectHandler;
-	Tool * NextTool;
+	Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)> DoneCallback;
 private:
+	bool m_multiselect;
 	bool m_lassoOn;
 	Point<double> m_lassoPt1, m_lassoPt2;
 	bool m_lassoDrawn;
+	Tool * m_prevTool;
+	friend void BeginSelecting(const wchar_t * prompt, const Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)> & doneCallback, bool multiselect);
+	friend class DefaultTool;
 };
 
 
@@ -306,7 +423,7 @@ private:
 };
 
 
-class CopyTool : public Tool
+class CopyTool : public virtual Tool
 {
 public:
 	virtual void Start();
@@ -315,7 +432,7 @@ protected:
 };
 
 
-class CutTool : public CopyTool
+class CutTool : public virtual CopyTool
 {
 public:
 	virtual void Start();
@@ -353,10 +470,23 @@ public:
 };
 
 
-class EraseTool : public Tool
+class EraseTool : public virtual Tool
 {
 public:
 	virtual void Start();
+};
+
+
+class SelectBaseTool : public virtual Tool {};
+
+
+template <class RealTool>
+class SelectWrapperTool : public SelectBaseTool, public RealTool
+{
+public:
+	virtual void Start();
+private:
+	void DoneSelecting(CadObject*, size_t);
 };
 
 
@@ -531,15 +661,10 @@ private:
 class ToolManager
 {
 public:
-	void RegisterTool(const std::wstring & id, Tool * tool, bool needSelection);
+	void RegisterTool(const std::wstring & id, Tool * tool);
 	void DispatchTool(const std::wstring & id);
 private:
-	struct ToolInfo
-	{
-		Tool * m_tool;
-		bool m_needSelection;
-	};
-	typedef std::map<std::wstring, ToolInfo> ToolsMapType;
+	typedef std::map<std::wstring, Tool*> ToolsMapType;
 	ToolsMapType m_toolsMap;
 };
 
@@ -717,6 +842,33 @@ inline bool ParsePoint2D(const std::wstring & str, Point<double> & point)
 		return true;
 	g_console.Log(L"Invalid 2D point");
 	return false;
+}
+
+
+template <class RealTool>
+void SelectWrapperTool<RealTool>::Start()
+{
+	if (g_selected.size() == 0)
+	{
+		BeginSelecting(L"Select objects:", Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)>(this, &SelectWrapperTool<RealTool>::DoneSelecting), true);
+		return;
+	}
+	g_console.Log(L"Found " + IntToWstr(g_selected.size()) + L" objects");
+	RealTool::Start();
+}
+
+
+template <class RealTool>
+void SelectWrapperTool<RealTool>::DoneSelecting(CadObject *, size_t)
+{
+	g_console.LogCommand();
+	if (g_selected.size() == 0)
+	{
+		ExitTool();
+		return;
+	}
+	RealTool::Start();
+	InvalidateRect(g_hclientWindow, 0, true);
 }
 
 #endif /* GLOBALS_H_ */
