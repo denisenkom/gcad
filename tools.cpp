@@ -1197,21 +1197,29 @@ private:
 		if (pos == intersections.end())
 		{
 			// cursor is between last intersection and end point, trimming end of line
-			line.SetEnd(intersections.back());
+			auto_ptr<T> updatedLine(new T(line));
+			updatedLine->SetEnd(intersections.back());
+			g_undoManager.AddWork(new AssignObjectUndoItem(&line, updatedLine.release()));
 		}
 		else if (pos == intersections.begin())
 		{
 			// cursor is between start point of line and first intersection,
 			// trimming beginning of line
-			line.SetStart(intersections.front());
+			auto_ptr<T> updatedLine(new T(line));
+			updatedLine->SetStart(intersections.front());
+			g_undoManager.AddWork(new AssignObjectUndoItem(&line, updatedLine.release()));
 		}
 		else
 		{
 			// cursor in between two intersections, splitting line
-			T * newline = new T(line);
+			auto_ptr<T> newline(new T(line));
+			auto_ptr<T> updatedLine(new T(line));
 			newline->SetStart(*pos);
-			line.SetEnd(*(pos - 1));
-			g_doc.Objects.push_back(newline);
+			updatedLine->SetEnd(*(pos - 1));
+			auto_ptr<GroupUndoItem> group(new GroupUndoItem);
+			group->AddItem(new AssignObjectUndoItem(&line, updatedLine.release()));
+			group->AddItem(new AddObjectUndoItem(newline.release()));
+			g_undoManager.AddWork(group.release());
 		}
 	}
 
@@ -1268,11 +1276,7 @@ private:
 			pt2 = *(iint-1);
 		}
 		// replacing circle with arc
-		list<CadObject*>::iterator pos = find(g_doc.Objects.begin(), g_doc.Objects.end(), &circle);
-		assert(pos != g_doc.Objects.end());
-		auto_ptr<CadArc> arc(new CadArc(circle, pt1, pt2, true));
-		delete *pos;
-		*pos = arc.release();
+		g_undoManager.AddWork(new AssignObjectUndoItem(&circle, new CadArc(circle, pt1, pt2, true)));
 	}
 
 	void AddBeginCutted(CadPolyline2 & polyline,
@@ -1356,7 +1360,7 @@ private:
 				for (CadPolyline2::Iterator i = intersections.front().first + 1; i != intersections.back().first; i++)
 					newpl.m_elements.push_back((*i)->Clone());
 				AddEndCutted(newpl, intersections.back());
-				polyline1.Assign(newpl.ToCadPolyline());
+				g_undoManager.AddWork(new AssignObjectUndoItem(&polyline1, new CadPolyline(newpl.ToCadPolyline())));
 			}
 			else
 			{
@@ -1368,7 +1372,7 @@ private:
 				for (CadPolyline2::Iterator i = polyline.Begin(); i != (pos-1)->first; i++)
 					newpl.m_elements.push_back((*i)->Clone());
 				AddEndCutted(newpl, *(pos-1));
-				polyline1.Assign(newpl.ToCadPolyline());
+				g_undoManager.AddWork(new AssignObjectUndoItem(&polyline1, new CadPolyline(newpl.ToCadPolyline())));
 			}
 		}
 		else
@@ -1381,7 +1385,7 @@ private:
 				AddBeginCutted(newpl, intersections.front());
 				for (CadPolyline2::Iterator i = intersections.front().first + 1; i != polyline.End(); i++)
 					newpl.m_elements.push_back((*i)->Clone());
-				polyline1.Assign(newpl.ToCadPolyline());
+				g_undoManager.AddWork(new AssignObjectUndoItem(&polyline1, new CadPolyline(newpl.ToCadPolyline())));
 			}
 			else if (pos == intersections.end())
 			{
@@ -1391,7 +1395,7 @@ private:
 				for (CadPolyline2::Iterator i = polyline.Begin(); i != intersections.back().first; i++)
 					newpl.m_elements.push_back((*i)->Clone());
 				AddEndCutted(newpl, intersections.back());
-				polyline1.Assign(newpl.ToCadPolyline());
+				g_undoManager.AddWork(new AssignObjectUndoItem(&polyline1, new CadPolyline(newpl.ToCadPolyline())));
 			}
 			else
 			{
@@ -1401,14 +1405,17 @@ private:
 				for (CadPolyline2::Iterator i = polyline.Begin(); i != (pos-1)->first; i++)
 					newpl1.m_elements.push_back((*i)->Clone());
 				AddEndCutted(newpl1, *(pos-1));
-				polyline1.Assign(newpl1.ToCadPolyline());
 
 				CadPolyline2 newpl2;
 				newpl2.m_closed = false;
 				AddBeginCutted(newpl2, *pos);
 				for (CadPolyline2::Iterator i = pos->first + 1; i != polyline.End(); i++)
 					newpl2.m_elements.push_back((*i)->Clone());
-				g_doc.Objects.push_back(new CadPolyline(newpl2.ToCadPolyline()));
+
+				auto_ptr<GroupUndoItem> group(new GroupUndoItem);
+				group->AddItem(new AssignObjectUndoItem(&polyline1, new CadPolyline(newpl1.ToCadPolyline())));
+				group->AddItem(new AddObjectUndoItem(new CadPolyline(newpl2.ToCadPolyline())));
+				g_undoManager.AddWork(group.release());
 			}
 		}
 	}

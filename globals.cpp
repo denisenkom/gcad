@@ -1802,9 +1802,11 @@ void AddObjectUndoItem::Undo()
 
 void AssignObjectUndoItem::Do()
 {
-	auto_ptr<CadObject> copy(m_toObject->Clone());
-	m_toObject->Assign(*m_fromObject.get());
-	m_fromObject = copy;
+	list<CadObject*>::iterator pos = find(g_doc.Objects.begin(), g_doc.Objects.end(), m_toObject);
+	assert(pos != g_doc.Objects.end());
+	CadObject * t = *pos;
+	*pos = m_toObject = m_fromObject.release();
+	m_fromObject.reset(t);
 }
 
 
