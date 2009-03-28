@@ -107,7 +107,7 @@ public:
 	bool IntersectsRect(const Rect<double> & rect) { return IntersectsRect(rect.Pt1.X, rect.Pt1.Y, rect.Pt2.X, rect.Pt2.Y); }
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const = 0;
 	virtual Rect<double> GetBoundingRect() const = 0; // returns normalized bounding rectangle
-	virtual std::vector<Point<double> > GetManipulators() const = 0;
+	virtual std::vector<Point<double> > GetManipulators() = 0;
 	virtual void UpdateManip(const Point<double> & pt, int id) = 0;
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const = 0;
 	virtual void Move(Point<double> displacement) = 0;
@@ -149,7 +149,7 @@ public:
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
 	virtual Rect<double> GetBoundingRect() const { return Line::GetBoundingRect(); }
-	virtual std::vector<Point<double> > GetManipulators() const;
+	virtual std::vector<Point<double> > GetManipulators();
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual void Move(Point<double> displacement);
@@ -186,7 +186,7 @@ public:
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
 	virtual Rect<double> GetBoundingRect() const;
-	virtual std::vector<Point<double> > GetManipulators() const;
+	virtual std::vector<Point<double> > GetManipulators();
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual void Move(Point<double> displacement);
@@ -256,7 +256,7 @@ public:
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
 	virtual Rect<double> GetBoundingRect() const;
-	virtual std::vector<Point<double> > GetManipulators() const;
+	virtual std::vector<Point<double> > GetManipulators();
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual void Move(Point<double> displacement);
@@ -281,7 +281,7 @@ public:
 	virtual void Draw(HDC hdc, bool selected) const;
 	virtual bool IntersectsRect(double x1, double y1, double x2, double y2) const;
 	virtual Rect<double> GetBoundingRect() const;
-	virtual std::vector<Point<double> > GetManipulators() const;
+	virtual std::vector<Point<double> > GetManipulators();
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
 	virtual void Move(Point<double> displacement);
@@ -301,6 +301,8 @@ public:
 	virtual CadArc * CutBegin(Point<double> pt) const { return EqualsEpsilon(pt, End) ? 0 : new CadArc(*this, pt, End, Ccw); }
 	virtual CadArc * CutEnd(Point<double> pt) const { return EqualsEpsilon(Start, pt) ? 0 : new CadArc(*this, Start, pt, Ccw); }
 	virtual double PointDist(Point<double> pt) const { return (Ccw ? 1 : -1) * ((pt - Center).Angle() - ((Ccw ? Start : End) - Center).Angle()).To2PiAng(); }
+private:
+	Point<double> m_manips[3];
 };
 
 
@@ -392,6 +394,7 @@ private:
 	Tool * m_prevTool;
 	friend void BeginSelecting(const wchar_t * prompt, const Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)> & doneCallback, bool multiselect);
 	friend class DefaultTool;
+	bool TrySelect();
 };
 
 

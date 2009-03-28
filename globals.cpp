@@ -126,7 +126,7 @@ bool CadLine::IntersectsRect(double x1, double y1, double x2, double y2) const
 }
 
 
-vector<Point<double> > CadLine::GetManipulators() const
+vector<Point<double> > CadLine::GetManipulators()
 {
 	vector<Point<double> > result(3);
 	result[0] = Point1;
@@ -363,7 +363,7 @@ Rect<double> CadPolyline::GetBoundingRect() const
 }
 
 
-std::vector<Point<double> > CadPolyline::GetManipulators() const
+std::vector<Point<double> > CadPolyline::GetManipulators()
 {
 	vector<Point<double> > result;
 	Node prev;
@@ -628,7 +628,7 @@ Rect<double> CadCircle::GetBoundingRect() const
 }
 
 
-vector<Point<double> > CadCircle::GetManipulators() const
+vector<Point<double> > CadCircle::GetManipulators()
 {
 	Point<double> manips[] = {
 			Point<double>(Center.X + Radius, Center.Y),
@@ -730,30 +730,19 @@ Rect<double> CadArc::GetBoundingRect() const
 }
 
 
-vector<Point<double> > CadArc::GetManipulators() const
+vector<Point<double> > CadArc::GetManipulators()
 {
-	Point<double> middle = CalcMiddlePoint();
-	vector<Point<double> > result(3);
-	result[0] = Start;
-	result[1] = middle;
-	result[2] = End;
-	return result;
+	m_manips[0] = Start;
+	m_manips[1] = CalcMiddlePoint();
+	m_manips[2] = End;
+	return vector<Point<double> >(m_manips, m_manips+sizeof(m_manips)/sizeof(m_manips[0]));
 }
 
 
 void CadArc::UpdateManip(const Point<double> & pt, int id)
 {
-	Point<double> middle = CalcMiddlePoint();
-	switch (id)
-	{
-	case 0: Start = pt; break;
-	case 1: middle = pt; break;
-	case 2: End = pt; break;
-	default: assert(0); break;
-	}
-	CircleArc arc = ArcFrom3Pt(Start, middle, End);
-	Center = arc.Center;
-	Radius = arc.Radius;
+	m_manips[id] = pt;
+	*this = ArcFrom3Pt(m_manips[0], m_manips[1], m_manips[2]);
 }
 
 
@@ -945,11 +934,100 @@ void MyRectangle(HDC hdc, Point<int> pt1, Point<int> pt2)
 }
 
 
+bool Selector::TrySelect()
+{
+	Rect<double> testRect;
+	bool multiselect;
+	bool intersect;
+	bool lassoWasOn = m_lassoOn;
+	if (m_lassoOn && m_lassoPt1 != m_lassoPt2)
+	{
+		testRect = Rect<double>(m_lassoPt1, m_lassoPt2).Normalized();
+		multiselect = true;
+		intersect = m_lassoPt1.X > m_lassoPt2.X;
+
+	}
+	else
+	{
+		testRect.Pt1 = ScreenToWorld(g_cursorScn.X - 3, g_cursorScn.Y + 3);
+		testRect.Pt2 = ScreenToWorld(g_cursorScn.X + 3, g_cursorScn.Y - 3);
+		multiselect = false;
+		intersect = true;
+	}
+	m_lassoOn = false;
+	if (m_lassoDrawn)
+	{
+		m_lassoDrawn = false;
+		InvalidateRect(g_hclientWindow, 0, true);
+	}
+	if (m_multiselect && (GetKeyState(VK_SHIFT) & 0x8000))
+	{
+		// removing selection
+		for (list<CadObject *>::iterator i = g_selected.end();
+			i != g_selected.begin();)
+		{
+			i--;
+			bool good;
+			if (intersect)
+				good = (*i)->IntersectsRect(testRect);
+			else
+				good = IsLeftContainsRight(testRect, (*i)->GetBoundingRect());
+			if (good)
+			{
+				if (SelectHandler)
+					SelectHandler(*i, false);
+				i = g_selected.erase(i);
+				InvalidateRect(g_hclientWindow, 0, true);
+				if (!multiselect)
+					break;
+			}
+		}
+		return true;
+	}
+	else
+	{
+		// selecting single cad object, if clicked on it
+		bool result = false;
+		for (list<CadObject *>::reverse_iterator i = g_doc.Objects.rbegin();
+			i != g_doc.Objects.rend(); i++)
+		{
+			if (m_multiselect && IsSelected(*i))
+				continue;
+			bool good;
+			if (intersect)
+				good = (*i)->IntersectsRect(testRect);
+			else
+				good = IsLeftContainsRight(testRect, (*i)->GetBoundingRect());
+			if (good)
+			{
+				if (!m_multiselect)
+				{
+					g_curTool = m_prevTool;
+					if (DoneCallback)
+						DoneCallback(*i, 1);
+					return true;
+				}
+				result = true;
+				g_selected.push_back(*i);
+				if (SelectHandler != 0)
+					SelectHandler(*i, true);
+				InvalidateRect(g_hclientWindow, 0, true);
+				if (!multiselect)
+					break;
+			}
+		}
+		return lassoWasOn ? true : result;
+	}
+}
+
+
 bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
 {
 	switch (msg)
 	{
 	case WM_LBUTTONDOWN:
+		if (TrySelect())
+			return true;
 		if (m_multiselect)
 		{
 			m_lassoPt2 = m_lassoPt1 = ScreenToWorld(g_cursorScn);
@@ -979,86 +1057,6 @@ bool Selector::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM l
 			return true;
 		}
 		return false;
-	case WM_LBUTTONUP:
-	{
-		Rect<double> testRect;
-		bool multiselect;
-		bool intersect;
-		if (m_lassoOn && m_lassoPt1 != m_lassoPt2)
-		{
-			testRect = Rect<double>(m_lassoPt1, m_lassoPt2).Normalized();
-			multiselect = true;
-			intersect = m_lassoPt1.X > m_lassoPt2.X;
-		}
-		else
-		{
-			testRect.Pt1 = ScreenToWorld(g_cursorScn.X - 3, g_cursorScn.Y + 3);
-			testRect.Pt2 = ScreenToWorld(g_cursorScn.X + 3, g_cursorScn.Y - 3);
-			multiselect = false;
-			intersect = true;
-		}
-		m_lassoOn = false;
-		if (m_lassoDrawn)
-		{
-			m_lassoDrawn = false;
-			InvalidateRect(hwnd, 0, true);
-		}
-		if (m_multiselect && (GetKeyState(VK_SHIFT) & 0x8000))
-		{
-			// removing selection
-			for (list<CadObject *>::iterator i = g_selected.end();
-				i != g_selected.begin();)
-			{
-				i--;
-				bool good;
-				if (intersect)
-					good = (*i)->IntersectsRect(testRect);
-				else
-					good = IsLeftContainsRight(testRect, (*i)->GetBoundingRect());
-				if (good)
-				{
-					if (SelectHandler)
-						SelectHandler(*i, false);
-					i = g_selected.erase(i);
-					InvalidateRect(hwnd, 0, true);
-					if (!multiselect)
-						break;
-				}
-			}
-		}
-		else
-		{
-			// selecting single cad object, if clicked on it
-			for (list<CadObject *>::reverse_iterator i = g_doc.Objects.rbegin();
-				i != g_doc.Objects.rend(); i++)
-			{
-				if (m_multiselect && IsSelected(*i))
-					continue;
-				bool good;
-				if (intersect)
-					good = (*i)->IntersectsRect(testRect);
-				else
-					good = IsLeftContainsRight(testRect, (*i)->GetBoundingRect());
-				if (good)
-				{
-					if (!m_multiselect)
-					{
-						g_curTool = m_prevTool;
-						if (DoneCallback)
-							DoneCallback(*i, 1);
-						return true;
-					}
-					g_selected.push_back(*i);
-					if (SelectHandler != 0)
-						SelectHandler(*i, true);
-					InvalidateRect(hwnd, 0, true);
-					if (!multiselect)
-						break;
-				}
-			}
-		}
-		return true;
-	}
 	case WM_KEYDOWN:
 		switch (wparam)
 		{
@@ -1120,19 +1118,17 @@ bool DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 			{
 				// begin moving manipulator if clicked in it
 				// selecting closest manipulator
-				Point<double> cursorPos = g_cursorWrld;
 				double range;
 				bool found = false;
 				for (list<Manipulator>::iterator i = m_manipulators.begin();
 					i != m_manipulators.end(); i++)
 				{
 					Point<int> posScn = WorldToScreen(i->Position);
-					if (posScn.X - MANIP_SIZE/2 <= GET_X_LPARAM(lparam) && GET_X_LPARAM(lparam) <= posScn.X + MANIP_SIZE/2 &&
-							posScn.Y - MANIP_SIZE/2 <= GET_Y_LPARAM(lparam) && GET_Y_LPARAM(lparam) <= posScn.Y + MANIP_SIZE/2)
+					Rect<int> manipRect(posScn - Point<int>(MANIP_SIZE/2, MANIP_SIZE/2),
+							posScn + Point<int>(MANIP_SIZE/2,MANIP_SIZE/2));
+					if (manipRect.Contains(Point<int>(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam))))
 					{
-						double dx = cursorPos.X - i->Position.X;
-						double dy = cursorPos.Y - i->Position.Y;
-						double newRange = sqrt(dx*dx + dy*dy);
+						double newRange = (i->Position - g_cursorWrld).Length();
 						if (!found || newRange < range)
 						{
 							found = true;
@@ -1143,12 +1139,7 @@ bool DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 				}
 				if (found)
 				{
-					ClientDC hdc(hwnd);
 					Point<int> posScn = WorldToScreen(m_selManip->Position);
-					RECT rect = {posScn.X - MANIP_SIZE/2, posScn.Y - MANIP_SIZE/2, posScn.X + MANIP_SIZE/2, posScn.Y + MANIP_SIZE/2};
-					if (g_cursorDrawn)
-						DrawCursor(hdc);
-					FillRect(hdc, &rect, g_selectedManipHBrush);
 					for (list<pair<CadObject*, int> >::iterator i = m_selManip->Links.begin();
 						i != m_selManip->Links.end(); i++)
 					{
@@ -1159,16 +1150,13 @@ bool DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 						m_manipulated.push_back(manip);
 						g_fantomManager.AddFantom(manip.Copy);
 					}
-					m_fantomLine.reset(new CadLine());
-					m_fantomLine->Point1 = m_fantomLine->Point2 = m_selManip->Position;
+					m_fantomLine.reset(new CadLine(m_selManip->Position, m_selManip->Position));
 					g_fantomManager.AddFantom(m_fantomLine.get());
 					g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &DefaultTool::RecalcFantomsHandler);
-					g_fantomManager.DrawFantoms(hdc);
 					g_customCursorType = CustomCursorTypeCross;
-					if (g_cursorDrawn)
-						DrawCursor(hdc);
 					m_state = MovingManip;
 					g_canSnap = true;
+					InvalidateRect(hwnd, 0, true);
 					break;
 				}
 				else
@@ -1199,23 +1187,21 @@ bool DefaultTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARA
 			for (list<Manipulated>::iterator i = m_manipulated.begin();
 				i != m_manipulated.end(); i++)
 			{
-				group->AddItem(new AssignObjectUndoItem(i->Original, i->Copy));
-				i->Copy = 0;
 				RemoveManipulators(i->Original);
+				g_selected.remove(i->Original);
+				group->AddItem(new AssignObjectUndoItem(i->Original, i->Copy));
+				g_selected.push_back(i->Copy);
+				AddManipulators(i->Copy);
+				i->Copy = 0;
 			}
 			g_undoManager.AddWork(group.release());
-			for (list<Manipulated>::iterator i = m_manipulated.begin();
-				i != m_manipulated.end(); i++)
-			{
-				AddManipulators(i->Original);
-			}
-			ClearManipulated();
+			m_manipulated.clear();
+			m_selManip = m_manipulators.end();
 			g_fantomManager.DeleteFantoms(false);
 			g_customCursorType = CustomCursorTypeSelect;
 			g_canSnap = false;
 			m_state = Selecting;
 			InvalidateRect(hwnd, 0, true);
-			UpdateWindow(hwnd);
 		}
 			return true;
 		default:
@@ -1362,7 +1348,10 @@ void DefaultTool::DrawManipulators(HDC hdc)
 	{
 		Point<int> pos = WorldToScreen(i->Position);
 		RECT rect = {pos.X - MANIP_SIZE/2, pos.Y - MANIP_SIZE/2, pos.X + MANIP_SIZE/2, pos.Y + MANIP_SIZE/2};
-		FillRect(hdc, &rect, g_manipHBrush);
+		if (i == m_selManip)
+			FillRect(hdc, &rect, g_selectedManipHBrush);
+		else
+			FillRect(hdc, &rect, g_manipHBrush);
 	}
 }
 
