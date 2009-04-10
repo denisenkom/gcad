@@ -163,12 +163,10 @@ vector<pair<Point<double>, PointType> > CadLine::GetPoints() const
 }
 
 
-void CadLine::Move(Point<double> displacement)
+void CadLine::Transform(const Matrix3<double> mat)
 {
-	Point1.X += displacement.X;
-	Point1.Y += displacement.Y;
-	Point2.X += displacement.X;
-	Point2.Y += displacement.Y;
+	Point1 = mat * Point1;
+	Point2 = mat * Point2;
 }
 
 
@@ -465,10 +463,10 @@ std::vector<std::pair<Point<double>, PointType> > CadPolyline::GetPoints() const
 }
 
 
-void CadPolyline::Move(Point<double> displacement)
+void CadPolyline::Transform(Matrix3<double> mat)
 {
 	for (vector<Node>::iterator i = Nodes.begin(); i != Nodes.end(); i++)
-		i->Point += displacement;
+		i->Point = mat * i->Point;
 }
 
 
@@ -668,9 +666,9 @@ std::vector<std::pair<Point<double>, PointType> > CadCircle::GetPoints() const
 }
 
 
-void CadCircle::Move(Point<double> displacement)
+void CadCircle::Transform(Matrix3<double> mat)
 {
-	Center += displacement;
+	Center = mat * Center;
 }
 
 
@@ -758,14 +756,11 @@ vector<pair<Point<double>, PointType> > CadArc::GetPoints() const
 }
 
 
-void CadArc::Move(Point<double> displacement)
+void CadArc::Transform(const Matrix3<double> mat)
 {
-	Center.X += displacement.X;
-	Center.Y += displacement.Y;
-	Start.X += displacement.X;
-	Start.Y += displacement.Y;
-	End.X += displacement.X;
-	End.Y += displacement.Y;
+	Center = mat * Center;
+	Start = mat * Start;
+	End = mat * End;
 }
 
 
@@ -1674,7 +1669,7 @@ void PasteTool::CalcPositions(const Point<double> & pt)
 	for (vector<CadObject*>::iterator i = m_objects.begin();
 		i != m_objects.end(); i++)
 	{
-		(*i)->Move(pt - m_basePoint);
+		(*i)->Transform(DisplaceMatrix(pt - m_basePoint));
 	}
 	m_basePoint = pt;
 }
@@ -1983,6 +1978,7 @@ void Cancel()
 	g_console.LogCommand(g_console.GetInput() + L"*cancel*");
 	g_console.ClearInput();
 	g_fantomManager.DeleteFantoms(false);
+	g_fantomManager.RecalcFantomsHandler = Functor<void>();
 	g_curTool->Cancel();
 	if (g_curTool != &g_defaultTool)
 	{

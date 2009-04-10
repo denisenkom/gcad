@@ -968,6 +968,7 @@ void MoveTool::Exiting()
 {
 	m_fantomLine.reset(0);
 	DeleteCopies();
+	m_originals.clear();
 	g_selected.clear();
 }
 
@@ -991,12 +992,12 @@ void MoveTool::RecalcFantomsHandler()
 
 void MoveTool::CalcPositions(const Point<double> & pt)
 {
-	for (vector<CadObject*>::iterator i = m_objects.begin();
-		i != m_objects.end(); i++)
+	for (size_t i = 0; i != m_objects.size(); i++)
 	{
-		(*i)->Move(pt - m_basePoint);
+		m_objects[i]->Assign(*m_originals[i]);
+		m_objects[i]->Transform(DisplaceMatrix(pt - m_basePoint));
 	}
-	m_basePoint = pt;
+	m_fantomLine->Point2 = pt;
 }
 
 
@@ -1009,11 +1010,13 @@ void MoveTool::FeedBasePoint(const Point<double> & pt)
 	g_fantomManager.AddFantom(m_fantomLine.get());
 	m_state = StateChoosingDestPoint;
 	DeleteCopies();
+	m_originals.resize(g_selected.size());
 	m_objects.resize(g_selected.size());
 	int no = 0;
 	for (list<CadObject*>::iterator i = g_selected.begin();
 		i != g_selected.end(); i++, no++)
 	{
+		m_originals[no] = *i;
 		m_objects[no] = (*i)->Clone();
 		g_fantomManager.AddFantom(m_objects[no]);
 	}
@@ -1024,6 +1027,132 @@ void MoveTool::FeedBasePoint(const Point<double> & pt)
 void MoveTool::FeedDestPoint(const Point<double> & pt)
 {
 	CalcPositions(pt);
+	auto_ptr<GroupUndoItem> group(new GroupUndoItem);
+	int no = 0;
+	for (list<CadObject*>::iterator i = g_selected.begin();
+		i != g_selected.end(); i++, no++)
+	{
+		group->AddItem(new AssignObjectUndoItem(*i, m_objects[no]));
+		m_objects[no] = 0;
+	}
+	g_undoManager.AddWork(group.release());
+	ExitTool();
+}
+
+
+typedef SelectWrapperTool<RotateTool> WrappedRotateTool;
+REGISTER_TOOL(L"rotate", WrappedRotateTool);
+
+void RotateTool::Start()
+{
+	assert(g_selected.size() != 0);
+	m_state = StateChoosingCenterPoint;
+	g_cursorType = CursorTypeManual;
+	g_cursorHandle = 0;
+	g_customCursorType = CustomCursorTypeCross;
+	g_canSnap = true;
+	g_console.SetPrompt(L"Specify center point:");
+}
+
+bool RotateTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam)
+{
+	switch (m_state)
+	{
+	case StateChoosingCenterPoint:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			g_console.LogCommand();
+			FeedBasePoint(g_cursorWrld);
+			return true;
+		default:
+			return false;
+		}
+	case StateChoosingAngle:
+		switch (msg)
+		{
+		case WM_LBUTTONUP:
+			g_console.LogCommand();
+			FeedAngle((g_cursorWrld - m_basePoint).Angle());
+			return true;
+		default:
+			return false;
+		}
+	default:
+		assert(0);
+		return false;
+	}
+}
+
+void RotateTool::Command(const wstring & cmd)
+{
+}
+
+void RotateTool::Exiting()
+{
+	m_fantomLine.reset(0);
+	DeleteCopies();
+	m_originals.clear();
+	g_selected.clear();
+}
+
+void RotateTool::DeleteCopies()
+{
+	for (vector<CadObject*>::iterator i = m_objects.begin();
+		i != m_objects.end(); i++)
+	{
+		delete *i;
+	}
+	m_objects.resize(0);
+}
+
+void RotateTool::RecalcFantomsHandler()
+{
+	CalcPositions(g_cursorWrld);
+}
+
+void RotateTool::CalcPositions(Point<double> pt)
+{
+	NormalAngle angle = (pt - m_basePoint).Angle();
+	m_fantomLine->Point2 = pt;
+	CalcPositions(angle);
+}
+
+void RotateTool::CalcPositions(NormalAngle angle)
+{
+	for (size_t i = 0; i != m_objects.size(); i++)
+	{
+		m_objects[i]->Assign(*m_originals[i]);
+		m_objects[i]->Transform(DisplaceMatrix(m_basePoint) *
+				RotationMatrix(angle) * DisplaceMatrix(-m_basePoint));
+	}
+}
+
+void RotateTool::FeedBasePoint(Point<double> pt)
+{
+	m_basePoint = pt;
+	g_fantomManager.RecalcFantomsHandler = Functor<void>(this, &RotateTool::RecalcFantomsHandler);
+	m_fantomLine.reset(new CadLine());
+	m_fantomLine->Point1 = m_fantomLine->Point2 = m_basePoint;
+	g_fantomManager.AddFantom(m_fantomLine.get());
+	m_state = StateChoosingAngle;
+	DeleteCopies();
+	m_originals.resize(g_selected.size());
+	m_objects.resize(g_selected.size());
+	int no = 0;
+	for (list<CadObject*>::iterator i = g_selected.begin();
+		i != g_selected.end(); i++, no++)
+	{
+		m_originals[no] = *i;
+		m_objects[no] = (*i)->Clone();
+		g_fantomManager.AddFantom(m_objects[no]);
+	}
+	g_console.SetPrompt(L"Specify angle:");
+}
+
+void RotateTool::FeedAngle(NormalAngle angle)
+{
+	CalcPositions(angle);
 	auto_ptr<GroupUndoItem> group(new GroupUndoItem);
 	int no = 0;
 	for (list<CadObject*>::iterator i = g_selected.begin();

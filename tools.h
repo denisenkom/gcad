@@ -134,13 +134,41 @@ private:
 	};
 	State m_state;
 	Point<double> m_basePoint;
-	std::vector<CadObject *> m_objects;
+	std::vector<CadObject *> m_objects; // managed
+	std::vector<CadObject *> m_originals; // not managed
 	std::auto_ptr<CadLine> m_fantomLine;
 	void DeleteCopies();
 	void RecalcFantomsHandler();
 	void CalcPositions(const Point<double> & pt);
 	void FeedBasePoint(const Point<double> & pt);
 	void FeedDestPoint(const Point<double> & pt);
+};
+
+
+class RotateTool : public virtual Tool
+{
+public:
+	virtual void Start();
+	virtual bool ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM lparam);
+	virtual void Command(const std::wstring & cmd);
+	virtual void Exiting();
+private:
+	enum State
+	{
+		StateChoosingCenterPoint,
+		StateChoosingAngle,
+	};
+	State m_state;
+	Point<double> m_basePoint;
+	std::vector<CadObject *> m_objects; // managed
+	std::vector<CadObject *> m_originals; // not managed
+	std::auto_ptr<CadLine> m_fantomLine;
+	void DeleteCopies();
+	void RecalcFantomsHandler();
+	void CalcPositions(Point<double> pt);
+	void CalcPositions(NormalAngle angle);
+	void FeedBasePoint(Point<double> pt);
+	void FeedAngle(NormalAngle angle);
 };
 
 

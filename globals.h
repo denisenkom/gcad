@@ -110,7 +110,7 @@ public:
 	virtual std::vector<Point<double> > GetManipulators() = 0;
 	virtual void UpdateManip(const Point<double> & pt, int id) = 0;
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const = 0;
-	virtual void Move(Point<double> displacement) = 0;
+	virtual void Transform(const Matrix3<double> mat) = 0;
 	virtual CadObject * Clone() const = 0;
 	virtual void Assign(const CadObject & rhs) = 0;
 	virtual size_t Serialize(unsigned char * ptr) const = 0;
@@ -152,7 +152,7 @@ public:
 	virtual std::vector<Point<double> > GetManipulators();
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
-	virtual void Move(Point<double> displacement);
+	virtual void Transform(const Matrix3<double> mat);
 	virtual CadLine * Clone() const;
 	virtual void Assign(const CadObject & rhs);
 	void Assign(const CadLine & rhs);
@@ -189,7 +189,7 @@ public:
 	virtual std::vector<Point<double> > GetManipulators();
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
-	virtual void Move(Point<double> displacement);
+	virtual void Transform(const Matrix3<double> mat);
 	virtual CadPolyline * Clone() const { return new CadPolyline(*this); }
 	void Assign(const CadPolyline & rhs) { *this = rhs; }
 	virtual size_t Serialize(unsigned char * ptr) const;
@@ -259,7 +259,7 @@ public:
 	virtual std::vector<Point<double> > GetManipulators();
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
-	virtual void Move(Point<double> displacement);
+	virtual void Transform(const Matrix3<double> mat);
 	virtual CadCircle * Clone() const;
 	virtual void Assign(const CadObject & rhs);
 	virtual size_t Serialize(unsigned char * ptr) const;
@@ -284,7 +284,7 @@ public:
 	virtual std::vector<Point<double> > GetManipulators();
 	virtual void UpdateManip(const Point<double> & pt, int id);
 	virtual std::vector<std::pair<Point<double>, PointType> > GetPoints() const;
-	virtual void Move(Point<double> displacement);
+	virtual void Transform(const Matrix3<double> mat);
 	virtual CadArc * Clone() const;
 	virtual void Assign(const CadObject & rhs);
 	void Assign(const CadArc & rhs);

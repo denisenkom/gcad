@@ -754,7 +754,8 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			SendMessageW(g_htoolbarMod, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
 			const TBBUTTON buttons[] = {
 				{0, ID_MODIFY_MOVE, TBSTATE_ENABLED, 0, 0, 0 },
-				{1, ID_MODIFY_TRIM, TBSTATE_ENABLED, 0, 0, 0 },
+				{1, ID_MODIFY_ROTATE, TBSTATE_ENABLED, 0, 0, 0 },
+				{2, ID_MODIFY_TRIM, TBSTATE_ENABLED, 0, 0, 0 },
 				};
 			if (!SendMessageW(g_htoolbarMod, TB_ADDBUTTONS, sizeof(buttons) / sizeof(buttons[0]), reinterpret_cast<LPARAM>(buttons)))
 				return -1;
@@ -880,6 +881,9 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 			break;
 		case ID_MODIFY_MOVE:
 			ExecuteCommand(L"move");
+			break;
+		case ID_MODIFY_ROTATE:
+			ExecuteCommand(L"rotate");
 			break;
 		case ID_MODIFY_TRIM:
 			ExecuteCommand(L"trim");

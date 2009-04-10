@@ -76,6 +76,11 @@ struct Point
 		return *this;
 	}
 
+	Point<T> operator - ()
+	{
+		return Point<T>(-X, -Y);
+	}
+
 	Point<T> & operator += (const Point<T> & left)
 	{
 		*this = *this + left;
