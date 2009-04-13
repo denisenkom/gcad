@@ -1086,6 +1086,19 @@ bool RotateTool::ProcessInput(HWND hwnd, unsigned int msg, WPARAM wparam, LPARAM
 
 void RotateTool::Command(const wstring & cmd)
 {
+	Point<double> pt;
+	double angle;
+	switch (m_state)
+	{
+	case StateChoosingCenterPoint:
+		if (ParsePoint2D(cmd, pt))
+			FeedBasePoint(pt);
+		break;
+	case StateChoosingAngle:
+		if (swscanf(cmd.c_str(), L"%lf", &angle) == 1)
+			FeedAngle(angle / 180.0 * M_PI);
+		break;
+	}
 }
 
 void RotateTool::Exiting()
@@ -1118,7 +1131,7 @@ void RotateTool::CalcPositions(Point<double> pt)
 	CalcPositions(angle);
 }
 
-void RotateTool::CalcPositions(NormalAngle angle)
+void RotateTool::CalcPositions(double angle)
 {
 	for (size_t i = 0; i != m_objects.size(); i++)
 	{
@@ -1150,7 +1163,7 @@ void RotateTool::FeedBasePoint(Point<double> pt)
 	g_console.SetPrompt(L"Specify angle:");
 }
 
-void RotateTool::FeedAngle(NormalAngle angle)
+void RotateTool::FeedAngle(double angle)
 {
 	CalcPositions(angle);
 	auto_ptr<GroupUndoItem> group(new GroupUndoItem);

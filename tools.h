@@ -166,9 +166,9 @@ private:
 	void DeleteCopies();
 	void RecalcFantomsHandler();
 	void CalcPositions(Point<double> pt);
-	void CalcPositions(NormalAngle angle);
+	void CalcPositions(double angle);
 	void FeedBasePoint(Point<double> pt);
-	void FeedAngle(NormalAngle angle);
+	void FeedAngle(double angle);
 };
 
 
