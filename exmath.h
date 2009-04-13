@@ -28,24 +28,31 @@ inline bool EqualsEpsilon(double lhs, double rhs)
 class NormalAngle
 {
 	double m_ang;
+	static double NormalizeAngle(double angle)
+	{
+		double norm = std::fmod(angle + M_PI, 2*M_PI);
+		if (norm <= 0)
+			norm = 2*M_PI + norm;
+		return norm - M_PI;
+	}
 public:
-	explicit NormalAngle(double ang) : m_ang(ang) {}
+	explicit NormalAngle(double ang) { m_ang = (-M_PI < ang && ang <= M_PI ? ang : NormalizeAngle(ang)); }
 	operator double() { return m_ang; }
 	NormalAngle operator-() { return NormalAngle(-m_ang); }
 	friend NormalAngle operator+(NormalAngle lhs, NormalAngle rhs)
 	{
 		double res = lhs.m_ang + rhs.m_ang;
 		if (res > M_PI)
-			res -= M_2_PI;
+			res -= 2*M_PI;
 		else if (res <= -M_PI)
-			res += M_2_PI;
+			res += 2*M_PI;
 		return NormalAngle(res);
 	}
 	friend NormalAngle operator-(NormalAngle lhs, NormalAngle rhs)
 	{
 		return operator+(lhs, -rhs);
 	}
-	double To2PiAng() { return m_ang >= 0 ? m_ang : m_ang + M_2_PI; }
+	double To2PiAng() { return m_ang >= 0 ? m_ang : m_ang + 2*M_PI; }
 };
 
 
