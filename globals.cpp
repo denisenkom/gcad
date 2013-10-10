@@ -334,7 +334,8 @@ static Rect<double> PolylineSegBoundingRect(const CadPolyline::Node & from,
 
 Rect<double> CadPolyline::GetBoundingRect() const
 {
-	Rect<double> result;
+	throw runtime_error("CadPolyline::GetBoundingRect not implemented");
+	/*Rect<double> result;
 	bool first = true;
 	Node prev;
 	for (vector<Node>::const_iterator i = Nodes.begin(); i != Nodes.end(); prev = *i, i++)
@@ -357,7 +358,7 @@ Rect<double> CadPolyline::GetBoundingRect() const
 		result = ::GetBoundingRect(result,
 				PolylineSegBoundingRect(Nodes.back(), Nodes.front()));
 	}
-	return result;
+	return result;*/
 }
 
 
@@ -821,8 +822,8 @@ struct Intersector
 	vector<Point<double> > Fire(const T & lhs, const CadPolyline & polyline) {return Intersect2(lhs, polyline);}
 	template<class T>
 	vector<Point<double> > Fire(const CadPolyline & polyline, const T & rhs) { assert(0); }
-	vector<Point<double> > Fire(const CadPolyline & lhs, const CadPolyline & rhs) { assert(0); }
-	vector<Point<double> > OnError(const CadObject & lhs, const CadObject & rhs) { assert(0); }
+	vector<Point<double> > Fire(const CadPolyline & lhs, const CadPolyline & rhs) { assert(0); return vector<Point<double> >(); }
+	vector<Point<double> > OnError(const CadObject & lhs, const CadObject & rhs) { assert(0); return vector<Point<double> >(); }
 };
 
 vector<Point<double> > Intersect2(const CadObject & lhs, const CadObject & rhs)

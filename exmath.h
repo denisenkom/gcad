@@ -128,8 +128,6 @@ struct Point
 				X * std::sin(angle) + Y * std::cos(angle));
 	}
 
-	friend Point<T> DirVector(T angle);
-
 	friend Point<T> NegateAngle(Point<T> dir)
 	{
 		return Point<T>(dir.X, -dir.Y);
@@ -176,7 +174,7 @@ struct Point
 };
 
 template<typename T>
-Point<T> DirVector(T angle)
+inline Point<T> DirVector(T angle)
 {
 	return Point<T>(std::cos(angle), std::sin(angle));
 }
@@ -407,15 +405,11 @@ public:
 				0, 1, vector.Y,
 				0, 0, 1);
 	}
-
-	// vector must be normalized
-	friend Matrix3<scalar> RotationMatrix(Point<scalar> dir);
-
-	friend Matrix3<scalar> RotationMatrix(scalar angle);
 };
 
+// vector must be normalized
 template<typename scalar>
-Matrix3<scalar> RotationMatrix(Point<scalar> dir)
+inline Matrix3<scalar> RotationMatrix(Point<scalar> dir)
 {
 	return Matrix3<double>(
 			dir.X, -dir.Y, 0,
@@ -424,7 +418,7 @@ Matrix3<scalar> RotationMatrix(Point<scalar> dir)
 }
 
 template<typename scalar>
-Matrix3<scalar> RotationMatrix(scalar angle)
+inline Matrix3<scalar> RotationMatrix(scalar angle)
 {
 	return RotationMatrix(DirVector(angle));
 }

@@ -214,6 +214,7 @@ public:
 	void operator++(int) { m_base++; }
 	friend CadPolyline2Iterator operator+(CadPolyline2Iterator lhs, int rhs) { return lhs.m_base + rhs; }
 	friend bool operator==(CadPolyline2Iterator lhs, CadPolyline2Iterator rhs) { return lhs.m_base == rhs.m_base; }
+	friend bool operator!=(CadPolyline2Iterator lhs, CadPolyline2Iterator rhs) { return !(lhs == rhs); }
 	friend bool operator<(CadPolyline2Iterator lhs, CadPolyline2Iterator rhs) { return lhs.m_base < rhs.m_base; }
 	friend class CadPolyline2;
 private:
@@ -222,7 +223,7 @@ private:
 };
 
 
-using namespace std::rel_ops;
+//using namespace std::rel_ops;
 
 
 class CadPolyline2
