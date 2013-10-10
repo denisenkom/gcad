@@ -9,9 +9,9 @@
 #include "exmath.h"
 #include <commctrl.h>
 #include <windowsx.h>
-#include <loki/functor.h>
-#include <loki/multimethods.h>
-#include <loki/typelistmacros.h>
+#include <loki/Functor.h>
+#include <loki/MultiMethods.h>
+#include <loki/TypelistMacros.h>
 #include <algorithm>
 #include <cmath>
 #include <cfloat>
@@ -828,11 +828,12 @@ struct Intersector
 
 vector<Point<double> > Intersect2(const CadObject & lhs, const CadObject & rhs)
 {
+	Intersector intersector;
 	return Loki::StaticDispatcher<Intersector,
 		const CadObject, LOKI_TYPELIST_4(const CadLine, const CadCircle, const CadArc, const CadPolyline),
 		true,
 		const CadObject, LOKI_TYPELIST_4(const CadLine, const CadCircle, const CadArc, const CadPolyline),
-		vector<Point<double> > >::Go(lhs, rhs, Intersector());
+		vector<Point<double> > >::Go(lhs, rhs, intersector);
 }
 
 
