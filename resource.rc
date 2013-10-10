@@ -9,8 +9,6 @@
 //
 #include "afxres.h"
 
-CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "manifest.xml"
-
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
 
@@ -49,16 +47,6 @@ END
 #endif    // APSTUDIO_INVOKED
 
 
-IDA_MAINACC ACCELERATORS
-{
-	"^Z",               ID_EDIT_UNDO
-	"^Y",               ID_EDIT_REDO
-	"^X",               ID_EDIT_CUT
-	"^C",               ID_EDIT_COPY
-	"^V",               ID_EDIT_PASTE
-}
-
-
 /////////////////////////////////////////////////////////////////////////////
 //
 // Menu
@@ -70,11 +58,11 @@ BEGIN
     BEGIN
         MENUITEM "Импорт DXF",                  ID_FILE_IMPORTDXF
         MENUITEM "Выход",                       ID_FILE_CLOSE
-    END    
+    END
     POPUP "Правка"
     BEGIN
-    	MENUITEM "Отмена\tCtrl+Z",              ID_EDIT_UNDO
-    	MENUITEM "Повтор\tCtrl+Y",              ID_EDIT_REDO
+        MENUITEM "Отмена\tCtrl+Z",              ID_EDIT_UNDO
+        MENUITEM "Повтор\tCtrl+Y",              ID_EDIT_REDO
     END
     POPUP "Вид"
     BEGIN
@@ -86,6 +74,33 @@ BEGIN
         MENUITEM "Отрезки",                     ID_DRAW_LINES
         MENUITEM "Дуги",                        ID_DRAW_ARCS
     END
+END
+
+#endif    // Russian resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// Neutral resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_NEU)
+#ifdef _WIN32
+LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
+#pragma code_page(1252)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Accelerator
+//
+
+IDA_MAINACC ACCELERATORS
+BEGIN
+    "^Z",           ID_EDIT_UNDO,           ASCII
+    "^Y",           ID_EDIT_REDO,           ASCII
+    "^X",           ID_EDIT_CUT,            ASCII
+    "^C",           ID_EDIT_COPY,           ASCII
+    "^V",           ID_EDIT_PASTE,          ASCII
 END
 
 
@@ -105,7 +120,7 @@ IDB_TBMODIFY            BITMAP                  "tbmod.bmp"
 
 IDC_PAN                 CURSOR                  "pan.cur"
 IDC_ZOOM                CURSOR                  "zoom.cur"
-#endif    // Russian resources
+#endif    // Neutral resources
 /////////////////////////////////////////////////////////////////////////////
 
 
