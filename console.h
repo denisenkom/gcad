@@ -11,6 +11,7 @@
 
 #include <windows.h>
 #include <string>
+#include <assert.h>
 
 
 class Console

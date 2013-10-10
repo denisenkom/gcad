@@ -16,6 +16,7 @@
 #include <list>
 #include <map>
 #include <vector>
+#include <cctype>
 #include "loki/Functor.h"
 
 
@@ -558,19 +559,8 @@ public:
 	operator LocalAllocStr() { return LocalAllocStr(this->Release()); }
 	operator Private::LocalAllocStrRef() { return Private::LocalAllocStrRef(this->Release()); }
 
-	inline friend LocalAllocStr GetWinErrorStr(unsigned long err = GetLastError())
-	{
-		LocalAllocStr result;
-		if (!FormatMessageW(
-				FORMAT_MESSAGE_FROM_SYSTEM |
-				FORMAT_MESSAGE_ALLOCATE_BUFFER |
-				FORMAT_MESSAGE_IGNORE_INSERTS,
-				0, err, 0, reinterpret_cast<wchar_t*>(&result.m_buf), 0, 0))
-		{
-			assert(0);
-		}
-		return result;
-	}
+	friend LocalAllocStr GetWinErrorStr(unsigned long);
+
 private:
 	wchar_t * m_buf;
 
@@ -580,6 +570,20 @@ private:
 	wchar_t * Release() { wchar_t * result = m_buf; m_buf = 0; return result; }
 };
 LocalAllocStr fn();
+
+inline LocalAllocStr GetWinErrorStr(unsigned long err = GetLastError())
+{
+	LocalAllocStr result;
+	if (!FormatMessageW(
+			FORMAT_MESSAGE_FROM_SYSTEM |
+			FORMAT_MESSAGE_ALLOCATE_BUFFER |
+			FORMAT_MESSAGE_IGNORE_INSERTS,
+			0, err, 0, reinterpret_cast<wchar_t*>(&result.m_buf), 0, 0))
+	{
+		assert(0);
+	}
+	return result;
+}
 
 
 class WinHandle

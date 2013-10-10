@@ -9,6 +9,9 @@
 #include <utility>
 #include <vector>
 
+#undef min
+#undef max
+
 
 const double EPSILON = 0.00000001;
 
@@ -125,10 +128,7 @@ struct Point
 				X * std::sin(angle) + Y * std::cos(angle));
 	}
 
-	friend Point<T> DirVector(T angle)
-	{
-		return Point<T>(std::cos(angle), std::sin(angle));
-	}
+	friend Point<T> DirVector(T angle);
 
 	friend Point<T> NegateAngle(Point<T> dir)
 	{
@@ -175,6 +175,11 @@ struct Point
 	}
 };
 
+template<typename T>
+Point<T> DirVector(T angle)
+{
+	return Point<T>(std::cos(angle), std::sin(angle));
+}
 
 template<typename T>
 struct Rect
@@ -404,19 +409,25 @@ public:
 	}
 
 	// vector must be normalized
-	friend Matrix3<scalar> RotationMatrix(Point<scalar> dir)
-	{
-		return Matrix3<double>(
-				dir.X, -dir.Y, 0,
-				dir.Y,  dir.X, 0,
-				0, 0, 1);
-	}
+	friend Matrix3<scalar> RotationMatrix(Point<scalar> dir);
 
-	friend Matrix3<scalar> RotationMatrix(scalar angle)
-	{
-		return RotationMatrix(DirVector(angle));
-	}
+	friend Matrix3<scalar> RotationMatrix(scalar angle);
 };
+
+template<typename scalar>
+Matrix3<scalar> RotationMatrix(Point<scalar> dir)
+{
+	return Matrix3<double>(
+			dir.X, -dir.Y, 0,
+			dir.Y,  dir.X, 0,
+			0, 0, 1);
+}
+
+template<typename scalar>
+Matrix3<scalar> RotationMatrix(scalar angle)
+{
+	return RotationMatrix(DirVector(angle));
+}
 
 
 // checks if angle inside arc
