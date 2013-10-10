@@ -16,7 +16,7 @@
 #include <list>
 #include <map>
 #include <vector>
-#include <loki/functor.h>
+#include "loki/Functor.h"
 
 
 #ifndef WM_MOUSEHWHEEL
