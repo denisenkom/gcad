@@ -867,7 +867,7 @@ inline std::wstring ToLower(const std::wstring & str)
 inline std::wstring IntToWstr(int value)
 {
 	wchar_t buffer[16];
-	int len = std::swprintf(buffer, L"%d", value);
+	int len = std::swprintf(buffer, sizeof(buffer) / sizeof(buffer[0]), L"%d", value);
 	assert(len > 0);
 	return std::wstring(buffer, len);
 }
