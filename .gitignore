@@ -1,6 +1,9 @@
 *.o
-/Debug
+/Debug
 /Release
 /*.ncb
 /*.suo
 /*.user
+*.sdf
+*.opensdf
+.svn
