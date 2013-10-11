@@ -860,7 +860,7 @@ inline bool IsKey(const std::wstring & cmd, const std::wstring & key) { return w
 inline std::wstring ToLower(const std::wstring & str)
 {
 	std::wstring result(str.size(), L'\0');
-	std::transform(str.begin(), str.end(), result.begin(), std::tolower);
+	std::transform(str.begin(), str.end(), result.begin(), ::tolower);
 	return result;
 }
 
