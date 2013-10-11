@@ -196,8 +196,8 @@ struct Rect
 
 	Rect<T> Normalized() const
 	{
-		return Rect<T>(std::min(Pt1.X, Pt2.X), std::min(Pt1.Y, Pt2.Y),
-				std::max(Pt1.X, Pt2.X), std::max(Pt1.Y, Pt2.Y));
+		return Rect<T>(std::min<T>(Pt1.X, Pt2.X), std::min<T>(Pt1.Y, Pt2.Y),
+				std::max<T>(Pt1.X, Pt2.X), std::max<T>(Pt1.Y, Pt2.Y));
 	}
 
 	// must be normalized
@@ -258,10 +258,10 @@ struct Rect
 	// rectangles must be normalized
 	friend Rect GetBoundingRect(const Rect & lhs, const Rect & rhs)
 	{
-		return Rect(std::min(lhs.Pt1.X, rhs.Pt1.X),
-				std::min(lhs.Pt1.Y, rhs.Pt1.Y),
-				std::max(lhs.Pt2.X, rhs.Pt2.X),
-				std::max(lhs.Pt2.Y, rhs.Pt2.Y));
+		return Rect(std::min<T>(lhs.Pt1.X, rhs.Pt1.X),
+				std::min<T>(lhs.Pt1.Y, rhs.Pt1.Y),
+				std::max<T>(lhs.Pt2.X, rhs.Pt2.X),
+				std::max<T>(lhs.Pt2.Y, rhs.Pt2.Y));
 	}
 };
 
@@ -376,7 +376,7 @@ public:
 		return m[row];
 	}
 
-	friend Matrix3<scalar> operator *(const Matrix3<scalar> & lhs, const Matrix3<scalar> & rhs)
+	Matrix3<scalar> operator *(const Matrix3<scalar> & rhs) const
 	{
 		Matrix3<scalar> result;
 		for (int r = 0; r < 3; r++)
@@ -385,27 +385,28 @@ public:
 			{
 				scalar val = 0;
 				for (int i = 0; i < 3; i++)
-					val += lhs[r][i]*rhs[i][c];
+					val += (*this)[r][i]*rhs[i][c];
 				result[r][c] = val;
 			}
 		}
 		return result;
 	}
 
-	friend Point<scalar> operator *(const Matrix3<scalar> & lhs, const Point<scalar> & rhs)
+	Point<scalar> operator *(const Point<scalar> & rhs) const
 	{
-		return Point<scalar>(lhs[0][0]*rhs.X + lhs[0][1]*rhs.Y + lhs[0][2],
-				lhs[1][0]*rhs.X + lhs[1][1]*rhs.Y + lhs[1][2]);
-	}
-
-	friend Matrix3<scalar> DisplaceMatrix(Point<scalar> vector)
-	{
-		return Matrix3<scalar>(
-				1, 0, vector.X,
-				0, 1, vector.Y,
-				0, 0, 1);
+		return Point<scalar>((*this)[0][0]*rhs.X + (*this)[0][1]*rhs.Y + (*this)[0][2],
+				(*this)[1][0]*rhs.X + (*this)[1][1]*rhs.Y + (*this)[1][2]);
 	}
 };
+
+template<typename scalar>
+Matrix3<scalar> DisplaceMatrix(Point<scalar> vector)
+{
+	return Matrix3<scalar>(
+			1, 0, vector.X,
+			0, 1, vector.Y,
+			0, 0, 1);
+}
 
 // vector must be normalized
 template<typename scalar>
@@ -518,94 +519,95 @@ struct CircleArc : public Circle
 		return result;
 	}
 
-	friend CircleArc ArcFrom3Pt(const Point<double> & p1, const Point<double> & p2, const Point<double> & p3)
-	{
-		CircleArc result;
-		double sx1sy1 = p1.X*p1.X + p1.Y*p1.Y;
-		double sx2sy2 = p2.X*p2.X + p2.Y*p2.Y;
-		double sx3sy3 = p3.X*p3.X + p3.Y*p3.Y;
-		Matrix3<double> m11(
-				p1.X, p1.Y, 1,
-				p2.X, p2.Y, 1,
-				p3.X, p3.Y, 1);
-		Matrix3<double> m12(
-				sx1sy1, p1.Y, 1,
-				sx2sy2, p2.Y, 1,
-				sx3sy3, p3.Y, 1);
-		Matrix3<double> m13(
-				sx1sy1, p1.X, 1,
-				sx2sy2, p2.X, 1,
-				sx3sy3, p3.X, 1);
-		Matrix3<double> m14(
-				sx1sy1, p1.X, p1.Y,
-				sx2sy2, p2.X, p2.Y,
-				sx3sy3, p3.X, p3.Y);
-		double dm11 = m11.Determinant();
-		if (dm11 == 0)
-		{
-			result.Start = p1;
-			result.End = p3;
-			result.Radius = 0;
-		}
-		else
-		{
-			double dm12 = m12.Determinant();
-			double dm13 = m13.Determinant();
-			double dm14 = m14.Determinant();
-			double cx = +.5f * dm12/dm11;
-			double cy = -.5f * dm13/dm11;
-			result.Center = Point<double>(cx, cy);
-			result.Radius = std::sqrt(cx*cx + cy*cy + dm14/dm11);
-			result.Ccw = dm11 > 0;
-			result.Start = p1;
-			result.End = p3;
-		}
-		return result;
-	}
-
-	// tangent must be normalized
-	friend CircleArc ArcFrom2PtAndNormTangent(const Point<double> & p1, const Point<double> & tangent, const Point<double> & p2)
-	{
-		CircleArc result;
-		Matrix3<double> disp(
-				1, 0, p1.X,
-				0, 1, p1.Y,
-				0, 0,    1);
-		Matrix3<double> rot(
-				tangent.X, -tangent.Y, 0,
-				tangent.Y,  tangent.X, 0,
-				0,          0,         1);
-		Point<double> p2img = rot.Inverse()*disp.Inverse()*p2;
-		if (p2img.Y == 0)
-		{
-			result.Start = p1;
-			result.End = p2;
-			result.Radius = 0;
-		}
-		else
-		{
-			double cy = (p2img.X*p2img.X + p2img.Y*p2img.Y)/2/p2img.Y;
-			result.Radius = std::abs(cy);
-			Point<double> centerimg(0, cy);
-			result.Center = disp*rot*centerimg;
-			result.Ccw = cy > 0;
-			result.Start = p1;
-			result.End = p2;
-		}
-		return result;
-	}
-
-	friend Point<double> ArcMiddleFrom2PtAndBulge(const Point<double> & p1, const Point<double> & p2, double bulge)
-	{
-		return (p2 + p1)/2 + ((p2 - p1)/2).Rotate(-M_PI/2) * bulge;
-	}
-
-	friend CircleArc ArcFrom2PtAndBulge(const Point<double> & p1, const Point<double> & p2, double bulge)
-	{
-		return ArcFrom3Pt(p1, ArcMiddleFrom2PtAndBulge(p1, p2, bulge), p2);
-	}
 };
 
+
+CircleArc ArcFrom3Pt(const Point<double> & p1, const Point<double> & p2, const Point<double> & p3)
+{
+	CircleArc result;
+	double sx1sy1 = p1.X*p1.X + p1.Y*p1.Y;
+	double sx2sy2 = p2.X*p2.X + p2.Y*p2.Y;
+	double sx3sy3 = p3.X*p3.X + p3.Y*p3.Y;
+	Matrix3<double> m11(
+			p1.X, p1.Y, 1,
+			p2.X, p2.Y, 1,
+			p3.X, p3.Y, 1);
+	Matrix3<double> m12(
+			sx1sy1, p1.Y, 1,
+			sx2sy2, p2.Y, 1,
+			sx3sy3, p3.Y, 1);
+	Matrix3<double> m13(
+			sx1sy1, p1.X, 1,
+			sx2sy2, p2.X, 1,
+			sx3sy3, p3.X, 1);
+	Matrix3<double> m14(
+			sx1sy1, p1.X, p1.Y,
+			sx2sy2, p2.X, p2.Y,
+			sx3sy3, p3.X, p3.Y);
+	double dm11 = m11.Determinant();
+	if (dm11 == 0)
+	{
+		result.Start = p1;
+		result.End = p3;
+		result.Radius = 0;
+	}
+	else
+	{
+		double dm12 = m12.Determinant();
+		double dm13 = m13.Determinant();
+		double dm14 = m14.Determinant();
+		double cx = +.5f * dm12/dm11;
+		double cy = -.5f * dm13/dm11;
+		result.Center = Point<double>(cx, cy);
+		result.Radius = std::sqrt(cx*cx + cy*cy + dm14/dm11);
+		result.Ccw = dm11 > 0;
+		result.Start = p1;
+		result.End = p3;
+	}
+	return result;
+}
+
+// tangent must be normalized
+CircleArc ArcFrom2PtAndNormTangent(const Point<double> & p1, const Point<double> & tangent, const Point<double> & p2)
+{
+	CircleArc result;
+	Matrix3<double> disp(
+			1, 0, p1.X,
+			0, 1, p1.Y,
+			0, 0,    1);
+	Matrix3<double> rot(
+			tangent.X, -tangent.Y, 0,
+			tangent.Y,  tangent.X, 0,
+			0,          0,         1);
+	Point<double> p2img = rot.Inverse()*disp.Inverse()*p2;
+	if (p2img.Y == 0)
+	{
+		result.Start = p1;
+		result.End = p2;
+		result.Radius = 0;
+	}
+	else
+	{
+		double cy = (p2img.X*p2img.X + p2img.Y*p2img.Y)/2/p2img.Y;
+		result.Radius = std::abs(cy);
+		Point<double> centerimg(0, cy);
+		result.Center = disp*rot*centerimg;
+		result.Ccw = cy > 0;
+		result.Start = p1;
+		result.End = p2;
+	}
+	return result;
+}
+
+Point<double> ArcMiddleFrom2PtAndBulge(const Point<double> & p1, const Point<double> & p2, double bulge)
+{
+	return (p2 + p1)/2 + ((p2 - p1)/2).Rotate(-M_PI/2) * bulge;
+}
+
+CircleArc ArcFrom2PtAndBulge(const Point<double> & p1, const Point<double> & p2, double bulge)
+{
+	return ArcFrom3Pt(p1, ArcMiddleFrom2PtAndBulge(p1, p2, bulge), p2);
+}
 
 template<typename scalar> // float or double
 bool LineIntersectsRect(scalar p1x, scalar p1y, scalar p2x, scalar p2y, scalar x1, scalar y1, scalar x2, scalar y2)
@@ -621,13 +623,13 @@ bool LineIntersectsRect(scalar p1x, scalar p1y, scalar p2x, scalar p2y, scalar x
 	// checking intersections with vertical sides of rectangle
 	if (!vertical)
 	{
-		if (min(p1x, p2x) <= x1 && x1 <= max(p1x, p2x))
+		if (std::min<scalar>(p1x, p2x) <= x1 && x1 <= std::max<scalar>(p1x, p2x))
 		{
 			scalar inty1 = (x1 - p1x)*(p2y - p1y)/(p2x - p1x) + p1y;
 			if (y1 <= inty1 && inty1 <= y2)
 				return true;
 		}
-		if (min(p1x, p2x) <= x2 && x2 <= max(p1x, p2x))
+		if (std::min<scalar>(p1x, p2x) <= x2 && x2 <= std::max<scalar>(p1x, p2x))
 		{
 			scalar inty2 = (x2 - p1x)*(p2y - p1y)/(p2x - p1x) + p1y;
 			if (y1 <= inty2 && inty2 <= y2)
@@ -637,13 +639,13 @@ bool LineIntersectsRect(scalar p1x, scalar p1y, scalar p2x, scalar p2y, scalar x
 	// checking intersections with horizontal sides of rectangle
 	if (!horizontal)
 	{
-		if (min(p1y, p2y) <= y1 && y1 <= max(p1y, p2y))
+		if (std::min<scalar>(p1y, p2y) <= y1 && y1 <= std::max<scalar>(p1y, p2y))
 		{
 			scalar intx1 = (y1 - p1y)*(p2x - p1x)/(p2y - p1y) + p1x;
 			if (x1 <= intx1 && intx1 <= x2)
 				return true;
 		}
-		if (min(p1y, p2y) <= y2 && y2 <= max(p1y, p2y))
+		if (std::min<scalar>(p1y, p2y) <= y2 && y2 <= std::max<scalar>(p1y, p2y))
 		{
 			scalar intx2 = (y2 - p1y)*(p2x - p1x)/(p2y - p1y) + p1x;
 			if (x1 <= intx2 && intx2 <= x2)
