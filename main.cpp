@@ -560,7 +560,7 @@ LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam
 			}
 			{
 			wchar_t buffer[32];
-			int len = swprintf(buffer, L"%#.4f, %#.4f", g_cursorWrld.X, g_cursorWrld.Y);
+			int len = swprintf(buffer, sizeof(buffer) / sizeof(buffer[0]), L"%#.4f, %#.4f", g_cursorWrld.X, g_cursorWrld.Y);
 			assert(len > 0);
 			assert(static_cast<size_t>(len) < sizeof(buffer)/sizeof(buffer[0]) - 1);
 			SetWindowTextW(g_statusBar, buffer);
