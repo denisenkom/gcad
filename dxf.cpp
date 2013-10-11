@@ -50,7 +50,7 @@ string DxfReader::ReadLine()
 	{
 		if (m_lastPos == m_bufSize)
 		{
-			unsigned long read;
+			DWORD read;
 			if (!ReadFile(m_hfile, m_buffer, sizeof(m_buffer), &read, 0))
 				throw DxfIOError();
 			assert(read <= sizeof(m_buffer));
