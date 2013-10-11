@@ -522,7 +522,7 @@ struct CircleArc : public Circle
 };
 
 
-CircleArc ArcFrom3Pt(const Point<double> & p1, const Point<double> & p2, const Point<double> & p3)
+inline CircleArc ArcFrom3Pt(const Point<double> & p1, const Point<double> & p2, const Point<double> & p3)
 {
 	CircleArc result;
 	double sx1sy1 = p1.X*p1.X + p1.Y*p1.Y;
@@ -568,7 +568,7 @@ CircleArc ArcFrom3Pt(const Point<double> & p1, const Point<double> & p2, const P
 }
 
 // tangent must be normalized
-CircleArc ArcFrom2PtAndNormTangent(const Point<double> & p1, const Point<double> & tangent, const Point<double> & p2)
+inline CircleArc ArcFrom2PtAndNormTangent(const Point<double> & p1, const Point<double> & tangent, const Point<double> & p2)
 {
 	CircleArc result;
 	Matrix3<double> disp(
@@ -599,12 +599,12 @@ CircleArc ArcFrom2PtAndNormTangent(const Point<double> & p1, const Point<double>
 	return result;
 }
 
-Point<double> ArcMiddleFrom2PtAndBulge(const Point<double> & p1, const Point<double> & p2, double bulge)
+inline Point<double> ArcMiddleFrom2PtAndBulge(const Point<double> & p1, const Point<double> & p2, double bulge)
 {
 	return (p2 + p1)/2 + ((p2 - p1)/2).Rotate(-M_PI/2) * bulge;
 }
 
-CircleArc ArcFrom2PtAndBulge(const Point<double> & p1, const Point<double> & p2, double bulge)
+inline CircleArc ArcFrom2PtAndBulge(const Point<double> & p1, const Point<double> & p2, double bulge)
 {
 	return ArcFrom3Pt(p1, ArcMiddleFrom2PtAndBulge(p1, p2, bulge), p2);
 }
