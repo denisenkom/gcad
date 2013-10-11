@@ -4,7 +4,6 @@
 #include "resource.h"
 #include <windows.h>
 #include <windowsx.h>
-#include <afxres.h>
 #include <commctrl.h>
 #include <list>
 #include <cassert>
