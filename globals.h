@@ -178,7 +178,7 @@ public:
 	static const int ID = 4;
 	struct Node
 	{
-		Point<double> Point;
+		Point<double> point;
 		double Bulge;
 	};
 	std::vector<Node> Nodes;

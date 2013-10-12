@@ -259,12 +259,12 @@ static void DrawPolylineSeg(HDC hdc, const CadPolyline::Node & from, const CadPo
 {
 	if (from.Bulge == 0)
 	{
-		Point<int> scnPt = WorldToScreen(to.Point.X, to.Point.Y);
+		Point<int> scnPt = WorldToScreen(to.point.X, to.point.Y);
 		LineTo(hdc, scnPt.X, scnPt.Y);
 	}
 	else
 	{
-		DrawArcTo(hdc, ArcFrom2PtAndBulge(from.Point, to.Point, from.Bulge));
+		DrawArcTo(hdc, ArcFrom2PtAndBulge(from.point, to.point, from.Bulge));
 	}
 }
 
@@ -279,7 +279,7 @@ void CadPolyline::Draw(HDC hdc, bool selected) const
 	vector<Node>::const_iterator i = Nodes.begin();
 	Node prev;
 	assert(i != Nodes.end());
-	Point<int> scnPt = WorldToScreen(i->Point);
+	Point<int> scnPt = WorldToScreen(i->point);
 	MoveToEx(hdc, scnPt.X, scnPt.Y, 0);
 	prev = *i;
 	i++;
@@ -294,11 +294,11 @@ static bool PolylineSegIntersectsRect(const CadPolyline::Node & from, const CadP
 {
 	if (from.Bulge == 0)
 	{
-		return LineIntersectsRect(from.Point, to.Point, rect);
+		return LineIntersectsRect(from.point, to.point, rect);
 	}
 	else
 	{
-		CircleArc arc = ArcFrom2PtAndBulge(from.Point, to.Point, from.Bulge);
+		CircleArc arc = ArcFrom2PtAndBulge(from.point, to.point, from.Bulge);
 		return IsIntersects(arc, rect);
 	}
 }
@@ -325,9 +325,9 @@ static Rect<double> PolylineSegBoundingRect(const CadPolyline::Node & from,
 		const CadPolyline::Node & to)
 {
 	if (from.Bulge == 0)
-		return Rect<double>(from.Point, to.Point).Normalized();
+		return Rect<double>(from.point, to.point).Normalized();
 	else
-		return ArcFrom2PtAndBulge(from.Point, to.Point, from.Bulge).CalcBoundingRect();
+		return ArcFrom2PtAndBulge(from.point, to.point, from.Bulge).CalcBoundingRect();
 
 }
 
@@ -371,16 +371,16 @@ std::vector<Point<double> > CadPolyline::GetManipulators()
 		if (i != Nodes.begin())
 		{
 			if (prev.Bulge != 0)
-				result.push_back(ArcMiddleFrom2PtAndBulge(prev.Point, i->Point, prev.Bulge));
+				result.push_back(ArcMiddleFrom2PtAndBulge(prev.point, i->point, prev.Bulge));
 		}
-		result.push_back(i->Point);
+		result.push_back(i->point);
 	}
 	if (Closed)
 	{
 		if (Nodes.back().Bulge != 0)
 		{
-			result.push_back(ArcMiddleFrom2PtAndBulge(Nodes.back().Point,
-					Nodes.front().Point, Nodes.back().Bulge));
+			result.push_back(ArcMiddleFrom2PtAndBulge(Nodes.back().point,
+					Nodes.front().point, Nodes.back().Bulge));
 		}
 	}
 	return result;
@@ -399,8 +399,8 @@ void CadPolyline::UpdateManip(const Point<double> & pt, int id)
 			{
 				if (counter == id)
 				{
-					CircleArc arc = ArcFrom3Pt(prev->Point, pt,
-						i->Point);
+					CircleArc arc = ArcFrom3Pt(prev->point, pt,
+						i->point);
 					prev->Bulge = arc.CalcBulge();
 					return;
 				}
@@ -409,7 +409,7 @@ void CadPolyline::UpdateManip(const Point<double> & pt, int id)
 		}
 		if (counter == id)
 		{
-			i->Point = pt;
+			i->point = pt;
 			return;
 		}
 		counter++;
@@ -418,8 +418,8 @@ void CadPolyline::UpdateManip(const Point<double> & pt, int id)
 	if (Closed)
 	{
 		assert(counter == id);
-		CircleArc arc = ArcFrom3Pt(Nodes.back().Point, pt,
-				Nodes.front().Point);
+		CircleArc arc = ArcFrom3Pt(Nodes.back().point, pt,
+				Nodes.front().point);
 		prev->Bulge = arc.CalcBulge();
 		return;
 	}
@@ -434,12 +434,12 @@ static void AddPolylineSegPoints(const CadPolyline::Node & from,
 {
 	if (from.Bulge == 0)
 	{
-		result.push_back(make_pair((from.Point + to.Point)/2, PointTypeMiddle));
+		result.push_back(make_pair((from.point + to.point)/2, PointTypeMiddle));
 	}
 	else
 	{
-		Point<double> middle = ArcMiddleFrom2PtAndBulge(from.Point, to.Point, from.Bulge);
-		CircleArc arc = ArcFrom3Pt(from.Point, middle, to.Point);
+		Point<double> middle = ArcMiddleFrom2PtAndBulge(from.point, to.point, from.Bulge);
+		CircleArc arc = ArcFrom3Pt(from.point, middle, to.point);
 		result.push_back(make_pair(middle, PointTypeMiddle));
 		result.push_back(make_pair(arc.Center, PointTypeCenter));
 	}
@@ -456,7 +456,7 @@ std::vector<std::pair<Point<double>, PointType> > CadPolyline::GetPoints() const
 	{
 		if (i != Nodes.begin())
 			AddPolylineSegPoints(prev, *i, result);
-		result.push_back(make_pair(i->Point, PointTypeEndPoint));
+		result.push_back(make_pair(i->point, PointTypeEndPoint));
 	}
 	if (Closed)
 		AddPolylineSegPoints(Nodes.back(), Nodes.front(), result);
@@ -467,7 +467,7 @@ std::vector<std::pair<Point<double>, PointType> > CadPolyline::GetPoints() const
 void CadPolyline::Transform(Matrix3<double> mat)
 {
 	for (vector<Node>::iterator i = Nodes.begin(); i != Nodes.end(); i++)
-		i->Point = mat * i->Point;
+		i->point = mat * i->point;
 }
 
 
@@ -532,12 +532,12 @@ void CadPolyline2::AddSeg(CadPolyline::Node node1, CadPolyline::Node node2)
 {
 	if (node1.Bulge == 0)
 	{
-		m_elements.push_back(new CadLine(node1.Point, node2.Point));
+		m_elements.push_back(new CadLine(node1.point, node2.point));
 	}
 	else
 	{
-		m_elements.push_back(new CadArc(ArcFrom2PtAndBulge(node1.Point,
-				node2.Point, node1.Bulge)));
+		m_elements.push_back(new CadArc(ArcFrom2PtAndBulge(node1.point,
+				node2.point, node1.Bulge)));
 	}
 }
 
@@ -548,14 +548,14 @@ CadPolyline CadPolyline2::ToCadPolyline() const
 	for (vector<IPolylineSeg*>::const_iterator i = m_elements.begin(); i != m_elements.end(); i++)
 	{
 		CadPolyline::Node node;
-		node.Point = (*i)->GetStart();
+		node.point = (*i)->GetStart();
 		node.Bulge = (*i)->GetBulge();
 		result.Nodes.push_back(node);
 	}
 	if (!m_closed)
 	{
 		CadPolyline::Node node;
-		node.Point = m_elements.back()->GetEnd();
+		node.point = m_elements.back()->GetEnd();
 		node.Bulge = 0;
 		result.Nodes.push_back(node);
 	}

@@ -338,11 +338,11 @@ void ImportDxf(HWND hwnd)
 							throw wstring(L"File has invalid format");
 						result->Nodes.push_back(CadPolyline::Node());
 						result->Nodes.back().Bulge = 0;
-						result->Nodes.back().Point.X = DxfStrToDouble(item.second.c_str());
+						result->Nodes.back().point.X = DxfStrToDouble(item.second.c_str());
 						flags |= GOTX;
 						break;
 					case 20:
-						result->Nodes.back().Point.Y = DxfStrToDouble(item.second.c_str());
+						result->Nodes.back().point.Y = DxfStrToDouble(item.second.c_str());
 						flags |= GOTY;
 						break;
 					case 42:
