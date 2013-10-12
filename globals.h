@@ -17,6 +17,7 @@
 #include <map>
 #include <vector>
 #include <cctype>
+#include <boost/algorithm/string.hpp>
 #include "loki/Functor.h"
 
 
@@ -394,10 +395,13 @@ private:
 	Point<int> m_lassoScnPt2;
 	bool m_lassoDrawn;
 	Tool * m_prevTool;
-	friend void BeginSelecting(const wchar_t * prompt, const Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)> & doneCallback, bool multiselect);
+	friend void BeginSelecting(const wchar_t*, const Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)>&, bool);
 	friend class DefaultTool;
 	bool TrySelect();
 };
+
+
+void BeginSelecting(const wchar_t * prompt, const Loki::Functor<void, LOKI_TYPELIST_2(CadObject*, size_t)> & doneCallback, bool multiselect);
 
 
 class DefaultTool : public Tool
@@ -855,7 +859,9 @@ void ReadPtr(unsigned char const * &ptr, T & val, size_t & size)
 void DeleteSelectedObjects();
 void ExecuteCommand(const std::wstring & cmd);
 void Cancel();
-inline bool IsKey(const std::wstring & cmd, const std::wstring & key) { return wcsnicmp(cmd.c_str(), key.c_str(), cmd.size()) == 0; }
+inline bool IsKey(const std::wstring & cmd, const std::wstring & key) {
+	return boost::iequals(cmd, key);
+}
 
 inline std::wstring ToLower(const std::wstring & str)
 {
