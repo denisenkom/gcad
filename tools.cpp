@@ -7,8 +7,8 @@
 
 #include "tools.h"
 #include "console.h"
-#include <loki/functor.h>
-#include <loki/typelistmacros.h>
+#include <loki/Functor.h>
+#include <loki/TypelistMacros.h>
 #include <algorithm>
 #include <functional>
 
