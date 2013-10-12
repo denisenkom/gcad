@@ -261,7 +261,7 @@ void DrawPLineTool::Command(const wstring & cmd)
 				IsKey(cmd, L"close"))
 		{
 			m_result->Closed = true;
-			*m_fantomArc = ArcFrom2PtAndNormTangent(m_fantomArc->Start, m_arcDir, m_result->Nodes.front().Point);
+			*m_fantomArc = ArcFrom2PtAndNormTangent(m_fantomArc->Start, m_arcDir, m_result->Nodes.front().point);
 			m_result->Nodes.back().Bulge = m_fantomArc->CalcBulge();
 			InvalidateRect(g_hclientWindow, 0, true);
 			ExitTool();
@@ -365,7 +365,7 @@ void DrawPLineTool::FeedFirstPoint(const Point<double> & pt)
 	g_doc.Objects.push_back(m_result);
 	CadPolyline::Node node;
 	node.Bulge = 0;
-	node.Point = pt;
+	node.point = pt;
 	m_result->Nodes.push_back(node);
 	InvalidateRect(g_hclientWindow, 0, true);
 }
@@ -380,7 +380,7 @@ void DrawPLineTool::FeedLineSecondPoint(const Point<double> & pt)
 	}
 	CadPolyline::Node node;
 	node.Bulge = 0;
-	node.Point = pt;
+	node.point = pt;
 	m_arcDir = (pt - m_fantomLine->Point1).Normalize();
 	m_result->Nodes.push_back(node);
 	m_fantomLine->Point1 = pt;
@@ -406,7 +406,7 @@ void DrawPLineTool::FeedArcEndPoint(const Point<double> & pt)
 	m_result->Nodes.back().Bulge = m_fantomArc->CalcBulge();
 	CadPolyline::Node node;
 	node.Bulge = 0;
-	node.Point = pt;
+	node.point = pt;
 	m_result->Nodes.push_back(node);
 	m_arcDir = DirVector((m_fantomArc->End - m_fantomArc->Center).Angle() + (m_fantomArc->Ccw ? M_PI/2 : -M_PI/2));
 	*m_fantomArc = ArcFrom2PtAndNormTangent(pt, m_arcDir, g_cursorWrld);
