@@ -13,6 +13,8 @@
 #include "exmath.h"
 #include "resource.h"
 #include <windows.h> // for HDC
+#undef max
+#undef min
 #include <list>
 #include <map>
 #include <vector>

@@ -10,6 +10,8 @@
 
 
 #include <windows.h>
+#undef max
+#undef min
 #include <string>
 #include <assert.h>
 
