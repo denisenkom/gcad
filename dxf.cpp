@@ -6,6 +6,7 @@
  */
 #include "dxf.h"
 #include "globals.h" // for LocalAllocStr and GetWinErrorStr
+#include <cstdio>
 #include <string>
 #include <limits>
 
@@ -87,7 +88,7 @@ bool DxfReader::ReadItem(pair<int, string> & result)
 	if (codeStr.size() == 0)
 		return false;
 	int code;
-	int ret = sscanf(codeStr.c_str(), "%d", &code);
+	int ret = std::sscanf(codeStr.c_str(), "%d", &code);
 	if (ret != 1)
 		throw wstring(L"File has invalid format");
 	result = make_pair(code, valStr);
